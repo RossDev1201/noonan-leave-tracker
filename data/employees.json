@@ -1,0 +1,255 @@
+[
+  {
+    "id": "N001",
+    "fullName": "Rossrival Bendillo",
+    "position": "IT Administrator / Web Developer / SEO Specialist",
+    "hireDate": "2024-12-01",
+    "startingBalance": 0,
+    "leaveTaken": [
+      {
+        "date": "2026-01-30",
+        "days": 1,
+        "type": "Unpaid",
+        "note": "birthday"
+      },
+      {
+        "date": "2026-01-30",
+        "days": 5,
+        "type": "Other",
+        "note": "Son's Graduation"
+      }
+    ]
+  },
+  {
+    "id": "N002",
+    "fullName": "Employee 02 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N003",
+    "fullName": "Employee 03 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N004",
+    "fullName": "Employee 04 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N005",
+    "fullName": "Employee 05 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N006",
+    "fullName": "Employee 06 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N007",
+    "fullName": "Employee 07 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N008",
+    "fullName": "Employee 08 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N009",
+    "fullName": "Employee 09 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N010",
+    "fullName": "Employee 10 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N011",
+    "fullName": "Employee 11 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N012",
+    "fullName": "Employee 12 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N013",
+    "fullName": "Employee 13 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N014",
+    "fullName": "Employee 14 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N015",
+    "fullName": "Employee 15 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N016",
+    "fullName": "Employee 16 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N017",
+    "fullName": "Employee 17 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N018",
+    "fullName": "Employee 18 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N019",
+    "fullName": "Employee 19 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N020",
+    "fullName": "Employee 20 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N021",
+    "fullName": "Employee 21 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N022",
+    "fullName": "Employee 22 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N023",
+    "fullName": "Employee 23 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N024",
+    "fullName": "Employee 24 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N025",
+    "fullName": "Employee 25 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N026",
+    "fullName": "Employee 26 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N027",
+    "fullName": "Employee 27 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N028",
+    "fullName": "Employee 28 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N029",
+    "fullName": "Employee 29 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  },
+  {
+    "id": "N030",
+    "fullName": "Employee 30 - Replace Name",
+    "position": "Replace Position",
+    "hireDate": "2026-01-01",
+    "startingBalance": 0,
+    "leaveTaken": []
+  }
+]

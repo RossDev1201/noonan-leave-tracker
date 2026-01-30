@@ -1,0 +1,30 @@
+# dependencies
+node_modules/
+.pnp/
+.pnp.js
+
+# next.js
+.next/
+out/
+
+# logs
+npm-debug.log*
+yarn-debug.log*
+yarn-error.log*
+pnpm-debug.log*
+
+# env files
+.env
+.env.local
+.env.development.local
+.env.test.local
+.env.production.local
+
+# Google service account keys (IMPORTANT: do not commit these)
+*.service-account.json
+noonan-leave-tracker-*.json
+noonan-leave-tracker-c097e5e73e07.json
+
+# misc
+.DS_Store
+*.log
