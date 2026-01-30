@@ -13,8 +13,14 @@ function getSheetsClient() {
     hasPrivateKey: !!SERVICE_ACCOUNT_PRIVATE_KEY,
   });
 
-  if (!SPREADSHEET_ID || !SERVICE_ACCOUNT_EMAIL || !SERVICE_ACCOUNT_PRIVATE_KEY) {
-    throw new Error("Google Sheets environment variables are not set");
+  if (!SPREADSHEET_ID) {
+    throw new Error("Google Sheets Spreadsheet ID is not set");
+  }
+  if (!SERVICE_ACCOUNT_EMAIL) {
+    throw new Error("Google Sheets Service Account Email is not set");
+  }
+  if (!SERVICE_ACCOUNT_PRIVATE_KEY) {
+    throw new Error("Google Sheets Service Account Private Key is not set");
   }
 
   const auth = new google.auth.JWT({
