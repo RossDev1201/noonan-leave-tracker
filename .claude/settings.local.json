@@ -3,7 +3,9 @@
     "allow": [
       "Bash(git -C \"D:/Leave Tracker/noonan-leave-tracker\" log --oneline)",
       "Bash(npm install *)",
-      "Bash(npx tsc *)"
+      "Bash(npx tsc *)",
+      "Bash(grep -oP 'process\\\\.env\\\\.\\\\w+|process\\\\.env\\\\[`[^`]+`\\\\]')",
+      "Bash(grep -roh 'process\\\\.env\\\\[`[^`]*`\\\\]' --include=\"*.ts\" --include=\"*.tsx\")"
     ]
   }
 }

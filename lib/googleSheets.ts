@@ -362,6 +362,37 @@ export async function getPayslipForCutoff(
   return all.find((p) => p.periodFrom === cutoff.from && p.periodTo === cutoff.to) ?? null;
 }
 
+// ─── Logins ───────────────────────────────────────────────────────────────────
+
+const LOGINS_RANGE = "Logins!A2:D";
+
+export type LoginEntry = {
+  username: string;
+  password: string;
+  role: "admin" | "member";
+  employeeId?: string;
+};
+
+export async function fetchLogins(): Promise<LoginEntry[]> {
+  const sheets = getSheetsClient();
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: LOGINS_RANGE,
+    });
+    return (res.data.values ?? [])
+      .filter((r) => r[0] && r[1])
+      .map((r) => ({
+        username: String(r[0]).trim(),
+        password: String(r[1]).trim(),
+        role: String(r[2]).trim() === "admin" ? "admin" : "member",
+        employeeId: r[3] ? String(r[3]).trim() : undefined,
+      }));
+  } catch {
+    return [];
+  }
+}
+
 // ─── Schedules ────────────────────────────────────────────────────────────────
 
 const SCHEDULES_RANGE = "Schedules!A2:D";

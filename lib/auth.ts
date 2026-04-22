@@ -1,5 +1,6 @@
 import type { NextAuthOptions } from "next-auth";
 import CredentialsProvider from "next-auth/providers/credentials";
+import { fetchLogins } from "./googleSheets";
 
 type AppUser = {
   id: string;
@@ -9,7 +10,8 @@ type AppUser = {
   employeeId?: string;
 };
 
-function loadUsers(): AppUser[] {
+// Fallback: load users from env vars (used in local dev when sheet is unavailable)
+function loadUsersFromEnv(): AppUser[] {
   const users: AppUser[] = [];
 
   if (process.env.ADMIN_USERNAME && process.env.ADMIN_PASSWORD) {
@@ -48,11 +50,30 @@ export const authOptions: NextAuthOptions = {
       },
       async authorize(credentials) {
         if (!credentials?.username || !credentials?.password) return null;
-        const users = loadUsers();
-        const found = users.find(
-          (u) =>
-            u.username === credentials.username &&
-            u.password === credentials.password
+
+        // Primary: read users from the Google Sheet "Logins" tab
+        try {
+          const sheetUsers = await fetchLogins();
+          if (sheetUsers.length > 0) {
+            const found = sheetUsers.find(
+              (u) => u.username === credentials.username && u.password === credentials.password
+            );
+            if (!found) return null;
+            return {
+              id: found.employeeId ?? found.username,
+              name: found.username,
+              role: found.role,
+              employeeId: found.employeeId,
+            };
+          }
+        } catch {
+          // Sheet unavailable — fall through to env vars
+        }
+
+        // Fallback: env vars (local dev)
+        const envUsers = loadUsersFromEnv();
+        const found = envUsers.find(
+          (u) => u.username === credentials.username && u.password === credentials.password
         );
         if (!found) return null;
         return {
