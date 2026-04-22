@@ -477,6 +477,251 @@ export async function upsertSchedule(schedule: EmployeeSchedule): Promise<void> 
   }
 }
 
+// ─── Contract Config ──────────────────────────────────────────────────────────
+
+const CONTRACT_RANGE = "ContractConfig!A2:F";
+
+export type ContractConfig = {
+  employeeId: string;
+  contractValue: number;
+  hourlyRate: number;
+  internetFee: number;
+  medicalFee: number;
+  department: string;
+};
+
+export async function getAllContractConfigs(): Promise<ContractConfig[]> {
+  const sheets = getSheetsClient();
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: CONTRACT_RANGE,
+    });
+    return (res.data.values ?? [])
+      .filter((r) => r[0])
+      .map((r) => ({
+        employeeId: String(r[0]),
+        contractValue: Number(r[1] ?? 0),
+        hourlyRate: Number(r[2] ?? 0),
+        internetFee: Number(r[3] ?? 0),
+        medicalFee: Number(r[4] ?? 0),
+        department: String(r[5] ?? "IT Department"),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+export async function getContractConfigForEmployee(employeeId: string): Promise<ContractConfig | null> {
+  const all = await getAllContractConfigs();
+  return all.find((c) => c.employeeId === employeeId) ?? null;
+}
+
+export async function upsertContractConfig(config: ContractConfig): Promise<void> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: CONTRACT_RANGE,
+  });
+  const rows = res.data.values ?? [];
+  let targetRow = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]) === config.employeeId) {
+      targetRow = i + 2;
+      break;
+    }
+  }
+  const rowData = [
+    config.employeeId,
+    config.contractValue,
+    config.hourlyRate,
+    config.internetFee,
+    config.medicalFee,
+    config.department,
+  ];
+  if (targetRow !== -1) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `ContractConfig!A${targetRow}:F${targetRow}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [rowData] },
+    });
+  } else {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "ContractConfig!A:F",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [rowData] },
+    });
+  }
+}
+
+// ─── Leave Requests ───────────────────────────────────────────────────────────
+
+const LEAVE_REQUESTS_RANGE = "LeaveRequests!A2:I";
+
+export type LeaveRequestEntry = {
+  requestId: string;
+  employeeId: string;
+  requestDate: string;
+  leaveDate: string;
+  days: number;
+  type: string;
+  reason: string;
+  status: "Pending" | "Approved" | "Rejected";
+  requestedAt: string;
+};
+
+export async function appendLeaveRequest(
+  req: Omit<LeaveRequestEntry, "requestId">
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const requestId = `lr-${req.employeeId}-${Date.now()}`;
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: "LeaveRequests!A:I",
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[
+        requestId, req.employeeId, req.requestDate, req.leaveDate,
+        req.days, req.type, req.reason, req.status, req.requestedAt,
+      ]],
+    },
+  });
+}
+
+export async function getLeaveRequests(employeeId?: string): Promise<LeaveRequestEntry[]> {
+  const sheets = getSheetsClient();
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: LEAVE_REQUESTS_RANGE,
+    });
+    const all = (res.data.values ?? [])
+      .filter((r) => r[0])
+      .map((r) => ({
+        requestId: String(r[0]),
+        employeeId: String(r[1] ?? ""),
+        requestDate: String(r[2] ?? ""),
+        leaveDate: String(r[3] ?? ""),
+        days: Number(r[4] ?? 0),
+        type: String(r[5] ?? "Annual"),
+        reason: String(r[6] ?? ""),
+        status: String(r[7] ?? "Pending") as "Pending" | "Approved" | "Rejected",
+        requestedAt: String(r[8] ?? ""),
+      }));
+    return employeeId ? all.filter((r) => r.employeeId === employeeId) : all;
+  } catch {
+    return [];
+  }
+}
+
+// ─── Invoice Edit Requests ────────────────────────────────────────────────────
+
+const INVOICE_EDIT_REQUESTS_RANGE = "InvoiceEditRequests!A2:J";
+
+export type InvoiceEditRequest = {
+  requestId: string;
+  employeeId: string;
+  periodFrom: string;
+  periodTo: string;
+  recepTaskPay: number;
+  hoursClaimed: number;
+  notes: string;
+  status: "Pending" | "Approved" | "Rejected";
+  requestedAt: string;
+  reviewedAt?: string;
+};
+
+export async function appendInvoiceEditRequest(
+  req: Omit<InvoiceEditRequest, "requestId">
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const requestId = `ier-${req.employeeId}-${Date.now()}`;
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: "InvoiceEditRequests!A:J",
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[
+        requestId, req.employeeId, req.periodFrom, req.periodTo,
+        req.recepTaskPay, req.hoursClaimed, req.notes, req.status, req.requestedAt, "",
+      ]],
+    },
+  });
+}
+
+export async function getInvoiceEditRequests(employeeId?: string): Promise<InvoiceEditRequest[]> {
+  const sheets = getSheetsClient();
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: INVOICE_EDIT_REQUESTS_RANGE,
+    });
+    const all = (res.data.values ?? [])
+      .filter((r) => r[0])
+      .map((r) => ({
+        requestId: String(r[0]),
+        employeeId: String(r[1] ?? ""),
+        periodFrom: String(r[2] ?? ""),
+        periodTo: String(r[3] ?? ""),
+        recepTaskPay: Number(r[4] ?? 0),
+        hoursClaimed: Number(r[5] ?? 0),
+        notes: String(r[6] ?? ""),
+        status: String(r[7] ?? "Pending") as "Pending" | "Approved" | "Rejected",
+        requestedAt: String(r[8] ?? ""),
+        reviewedAt: r[9] ? String(r[9]) : undefined,
+      }));
+    return employeeId ? all.filter((r) => r.employeeId === employeeId) : all;
+  } catch {
+    return [];
+  }
+}
+
+export async function updateInvoiceEditRequestStatus(
+  requestId: string,
+  status: "Approved" | "Rejected"
+): Promise<boolean> {
+  const sheets = getSheetsClient();
+  let res;
+  try {
+    res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: INVOICE_EDIT_REQUESTS_RANGE,
+    });
+  } catch {
+    return false;
+  }
+  const rows = res.data.values ?? [];
+  let targetRow = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]) === requestId) {
+      targetRow = i + 2;
+      break;
+    }
+  }
+  if (targetRow === -1) return false;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `InvoiceEditRequests!H${targetRow}:J${targetRow}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[status, new Date().toISOString(), ""]] },
+  });
+  return true;
+}
+
+export async function getEditRequestForPeriod(
+  employeeId: string,
+  periodFrom: string,
+  periodTo: string
+): Promise<InvoiceEditRequest | null> {
+  const all = await getInvoiceEditRequests(employeeId);
+  const forPeriod = all
+    .filter((r) => r.periodFrom === periodFrom && r.periodTo === periodTo)
+    .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt));
+  return forPeriod[0] ?? null;
+}
+
 export async function getAllTimeEntries(): Promise<Record<string, TimeEntry[]>> {
   const sheets = getSheetsClient();
 

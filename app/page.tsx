@@ -31,12 +31,49 @@ type SavedSchedule = {
   graceMinutes: number;
 };
 
+type ContractForm = {
+  contractValue: string;
+  hourlyRate: string;
+  internetFee: string;
+  medicalFee: string;
+  department: string;
+  loading: boolean;
+  error?: string;
+  success?: string;
+};
+
+type SavedContract = {
+  employeeId: string;
+  contractValue: number;
+  hourlyRate: number;
+  internetFee: number;
+  medicalFee: number;
+  department: string;
+};
+
+type InvoiceEditRequest = {
+  requestId: string;
+  employeeId: string;
+  periodFrom: string;
+  periodTo: string;
+  recepTaskPay: number;
+  hoursClaimed: number;
+  notes: string;
+  status: "Pending" | "Approved" | "Rejected";
+  requestedAt: string;
+  reviewedAt?: string;
+};
+
 function makeInitialForm(): LeaveFormState {
   return { date: new Date().toISOString().slice(0, 10), days: "", type: "Annual", note: "", loading: false };
 }
 
 function makeInitialSchedule(): ScheduleForm {
   return { startTime: "09:00", endTime: "17:00", loading: false };
+}
+
+function makeInitialContract(): ContractForm {
+  return { contractValue: "45000", hourlyRate: "300", internetFee: "1250", medicalFee: "1250", department: "IT Department", loading: false };
 }
 
 export const dynamic = "force-dynamic";
@@ -52,7 +89,11 @@ export default function AdminPage() {
   const [forms, setForms] = useState<Record<string, LeaveFormState>>({});
   const [schedules, setSchedules] = useState<Record<string, ScheduleForm>>({});
   const [savedSchedules, setSavedSchedules] = useState<SavedSchedule[]>([]);
-  const [activeTab, setActiveTab] = useState<"leave" | "schedules">("leave");
+  const [contracts, setContracts] = useState<Record<string, ContractForm>>({});
+  const [savedContracts, setSavedContracts] = useState<SavedContract[]>([]);
+  const [editRequests, setEditRequests] = useState<InvoiceEditRequest[]>([]);
+  const [reviewingId, setReviewingId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"leave" | "schedules" | "contracts" | "editRequests">("leave");
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -62,6 +103,8 @@ export default function AdminPage() {
     if (status === "authenticated" && user?.role === "admin") {
       void fetchEmployees();
       void fetchSchedules();
+      void fetchContracts();
+      void fetchEditRequests();
     }
   }, [status, user, router]);
 
@@ -82,6 +125,38 @@ export default function AdminPage() {
       setError(err instanceof Error ? err.message : "Failed to load employees");
     } finally {
       setLoading(false);
+    }
+  }
+
+  async function fetchContracts() {
+    const res = await fetch("/api/admin/contract");
+    if (res.ok) {
+      const data = await res.json() as { configs: SavedContract[] };
+      setSavedContracts(data.configs);
+      setContracts((prev) => {
+        const next = { ...prev };
+        for (const c of data.configs) {
+          if (!next[c.employeeId]) {
+            next[c.employeeId] = {
+              contractValue: String(c.contractValue),
+              hourlyRate: String(c.hourlyRate),
+              internetFee: String(c.internetFee),
+              medicalFee: String(c.medicalFee),
+              department: c.department,
+              loading: false,
+            };
+          }
+        }
+        return next;
+      });
+    }
+  }
+
+  async function fetchEditRequests() {
+    const res = await fetch("/api/admin/invoice-requests");
+    if (res.ok) {
+      const data = await res.json() as { requests: InvoiceEditRequest[] };
+      setEditRequests(data.requests);
     }
   }
 
@@ -142,6 +217,47 @@ export default function AdminPage() {
     } finally {
       updateFormField(employeeId, "loading", false);
     }
+  }
+
+  function updateContractField(id: string, field: keyof ContractForm, value: string | boolean) {
+    setContracts((prev) => ({ ...prev, [id]: { ...(prev[id] ?? makeInitialContract()), [field]: value as never } }));
+  }
+
+  async function handleSaveContract(employeeId: string) {
+    const form = contracts[employeeId] ?? makeInitialContract();
+    updateContractField(employeeId, "loading", true);
+    updateContractField(employeeId, "error", "");
+    updateContractField(employeeId, "success", "");
+    const res = await fetch("/api/admin/contract", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        employeeId,
+        contractValue: Number(form.contractValue) || 0,
+        hourlyRate: Number(form.hourlyRate) || 0,
+        internetFee: Number(form.internetFee) || 0,
+        medicalFee: Number(form.medicalFee) || 0,
+        department: form.department,
+      }),
+    });
+    updateContractField(employeeId, "loading", false);
+    if (res.ok) {
+      updateContractField(employeeId, "success", "Saved.");
+      void fetchContracts();
+    } else {
+      updateContractField(employeeId, "error", "Failed to save.");
+    }
+  }
+
+  async function handleReviewEditRequest(requestId: string, status: "Approved" | "Rejected") {
+    setReviewingId(requestId);
+    const res = await fetch("/api/admin/invoice-requests", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId, status }),
+    });
+    setReviewingId(null);
+    if (res.ok) void fetchEditRequests();
   }
 
   async function handleSaveSchedule(employeeId: string) {
@@ -219,17 +335,22 @@ export default function AdminPage() {
 
         {/* Tab switcher */}
         <div className="mb-4 flex gap-1 rounded-xl bg-slate-200 p-1 dark:bg-slate-800">
-          {(["leave", "schedules"] as const).map((tab) => (
+          {([
+            { key: "leave", label: "Leave" },
+            { key: "schedules", label: "Schedules" },
+            { key: "contracts", label: "Contracts" },
+            { key: "editRequests", label: `Edit Requests${editRequests.filter(r => r.status === "Pending").length > 0 ? ` (${editRequests.filter(r => r.status === "Pending").length})` : ""}` },
+          ] as const).map(({ key, label }) => (
             <button
-              key={tab}
-              onClick={() => setActiveTab(tab)}
-              className={`flex-1 rounded-lg py-2 text-sm font-semibold transition ${
-                activeTab === tab
+              key={key}
+              onClick={() => setActiveTab(key)}
+              className={`flex-1 rounded-lg py-2 text-xs font-semibold transition sm:text-sm ${
+                activeTab === key
                   ? "bg-white text-navy-700 shadow-sm dark:bg-slate-700 dark:text-navy-300"
                   : "text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
               }`}
             >
-              {tab === "leave" ? "Leave Overview" : "Employee Schedules"}
+              {label}
             </button>
           ))}
         </div>
@@ -420,6 +541,171 @@ export default function AdminPage() {
                 </tbody>
               </table>
             </div>
+          </section>
+        )}
+        {/* ── CONTRACTS TAB ── */}
+        {activeTab === "contracts" && (
+          <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+            <div className="mb-4">
+              <h2 className="text-base font-semibold">Employee Contract Values</h2>
+              <p className="mt-0.5 text-xs text-slate-400">
+                Set per-employee contract value and pay rates. Admin Task Pay = Contract Value ÷ 2 per cutoff period.
+                Requires a &quot;ContractConfig&quot; tab in your Google Sheet (A=employeeId, B=contractValue, C=hourlyRate, D=internetFee, E=medicalFee, F=department).
+              </p>
+            </div>
+            <div className="space-y-4">
+              {employees.map((emp) => {
+                const saved = savedContracts.find((c) => c.employeeId === emp.id);
+                const form = contracts[emp.id] ?? {
+                  ...makeInitialContract(),
+                  ...(saved ? {
+                    contractValue: String(saved.contractValue),
+                    hourlyRate: String(saved.hourlyRate),
+                    internetFee: String(saved.internetFee),
+                    medicalFee: String(saved.medicalFee),
+                    department: saved.department,
+                  } : {}),
+                };
+                return (
+                  <div key={emp.id} className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200 dark:bg-slate-800/60 dark:ring-slate-700">
+                    <div className="mb-3 flex items-center gap-2">
+                      <span className="font-medium text-sm">{emp.fullName}</span>
+                      <span className="text-xs text-slate-400">{emp.id}</span>
+                      {saved && (
+                        <span className="rounded-full bg-emerald-100 px-1.5 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                          Saved
+                        </span>
+                      )}
+                    </div>
+                    <div className="grid grid-cols-2 gap-3 sm:grid-cols-3">
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-slate-400">Contract Value (₱)</label>
+                        <input type="number" min={0} step={1000} value={form.contractValue}
+                          onChange={(e) => updateContractField(emp.id, "contractValue", e.target.value)}
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-900" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-slate-400">Hourly Rate (₱)</label>
+                        <input type="number" min={0} step={50} value={form.hourlyRate}
+                          onChange={(e) => updateContractField(emp.id, "hourlyRate", e.target.value)}
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-900" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-slate-400">Internet Fee (₱)</label>
+                        <input type="number" min={0} step={100} value={form.internetFee}
+                          onChange={(e) => updateContractField(emp.id, "internetFee", e.target.value)}
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-900" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-slate-400">Medical Fee (₱)</label>
+                        <input type="number" min={0} step={100} value={form.medicalFee}
+                          onChange={(e) => updateContractField(emp.id, "medicalFee", e.target.value)}
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-900" />
+                      </div>
+                      <div>
+                        <label className="mb-1 block text-[11px] font-medium text-slate-400">Department</label>
+                        <input type="text" value={form.department}
+                          onChange={(e) => updateContractField(emp.id, "department", e.target.value)}
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-900" />
+                      </div>
+                      <div className="flex items-end gap-2">
+                        <button disabled={form.loading} onClick={() => handleSaveContract(emp.id)}
+                          className="rounded-md bg-navy-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-navy-600 disabled:opacity-60">
+                          {form.loading ? "…" : "Save"}
+                        </button>
+                        {form.success && <span className="text-xs text-emerald-600">{form.success}</span>}
+                        {form.error && <span className="text-xs text-rose-500">{form.error}</span>}
+                      </div>
+                    </div>
+                    {form.contractValue && (
+                      <p className="mt-2 text-[11px] text-slate-400">
+                        Admin Task Pay per cutoff: <span className="font-mono font-semibold text-navy-700 dark:text-navy-300">
+                          ₱{(Number(form.contractValue) / 2).toLocaleString()}
+                        </span>
+                      </p>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
+        {/* ── EDIT REQUESTS TAB ── */}
+        {activeTab === "editRequests" && (
+          <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+            <div className="mb-4">
+              <h2 className="text-base font-semibold">Invoice Edit Requests</h2>
+              <p className="mt-0.5 text-xs text-slate-400">
+                Members submit invoice edits for approval. Approve to unlock PDF download for the member.
+              </p>
+            </div>
+            {editRequests.length === 0 ? (
+              <p className="text-sm text-slate-400 py-4 text-center">No edit requests yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {editRequests
+                  .sort((a, b) => {
+                    const order = { Pending: 0, Approved: 1, Rejected: 2 };
+                    return (order[a.status] - order[b.status]) || b.requestedAt.localeCompare(a.requestedAt);
+                  })
+                  .map((req) => {
+                    const emp = employees.find((e) => e.id === req.employeeId);
+                    return (
+                      <div key={req.requestId} className={`rounded-xl p-4 ring-1 ${
+                        req.status === "Pending"
+                          ? "bg-amber-50 ring-amber-200 dark:bg-amber-900/20 dark:ring-amber-800"
+                          : req.status === "Approved"
+                          ? "bg-emerald-50 ring-emerald-200 dark:bg-emerald-900/20 dark:ring-emerald-800"
+                          : "bg-slate-50 ring-slate-200 dark:bg-slate-800/60 dark:ring-slate-700"
+                      }`}>
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <span className="font-semibold text-sm">{emp?.fullName ?? req.employeeId}</span>
+                            <span className="ml-2 text-xs text-slate-400">{req.periodFrom} → {req.periodTo}</span>
+                          </div>
+                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${
+                            req.status === "Pending"
+                              ? "bg-amber-100 text-amber-700 ring-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:ring-amber-800"
+                              : req.status === "Approved"
+                              ? "bg-emerald-100 text-emerald-700 ring-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:ring-emerald-800"
+                              : "bg-slate-200 text-slate-600 ring-slate-300 dark:bg-slate-700 dark:text-slate-400 dark:ring-slate-600"
+                          }`}>
+                            {req.status}
+                          </span>
+                        </div>
+                        <div className="mb-3 grid grid-cols-3 gap-2 text-xs">
+                          <div><span className="text-slate-400">Recep Pay:</span> <span className="font-mono font-medium">₱{req.recepTaskPay.toLocaleString()}</span></div>
+                          <div><span className="text-slate-400">Hours Claimed:</span> <span className="font-mono font-medium">{req.hoursClaimed}</span></div>
+                          <div><span className="text-slate-400">Submitted:</span> <span className="font-medium">{new Date(req.requestedAt).toLocaleDateString()}</span></div>
+                          {req.notes && <div className="col-span-3"><span className="text-slate-400">Notes:</span> <span className="font-medium">{req.notes}</span></div>}
+                        </div>
+                        {req.status === "Pending" && (
+                          <div className="flex gap-2">
+                            <button
+                              disabled={reviewingId === req.requestId}
+                              onClick={() => handleReviewEditRequest(req.requestId, "Approved")}
+                              className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                            >
+                              {reviewingId === req.requestId ? "…" : "Approve"}
+                            </button>
+                            <button
+                              disabled={reviewingId === req.requestId}
+                              onClick={() => handleReviewEditRequest(req.requestId, "Rejected")}
+                              className="rounded-md bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-60"
+                            >
+                              {reviewingId === req.requestId ? "…" : "Reject"}
+                            </button>
+                          </div>
+                        )}
+                        {req.reviewedAt && (
+                          <p className="mt-1 text-[11px] text-slate-400">Reviewed: {new Date(req.reviewedAt).toLocaleString()}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
           </section>
         )}
       </div>

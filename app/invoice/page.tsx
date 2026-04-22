@@ -6,11 +6,13 @@ import { useEffect, useState, useCallback } from "react";
 import { formatPeso, isCutoffDay } from "@/lib/cutoff";
 import type { PayslipData } from "@/lib/payslip";
 import { ThemeToggle } from "@/app/components/ThemeToggle";
+import type { InvoiceEditRequest } from "@/lib/googleSheets";
 
 type InvoiceResponse = {
   payslip: PayslipData;
   isFinalized: boolean;
   savedAt?: string;
+  editRequest: InvoiceEditRequest | null;
 };
 
 function toDisplayDate(iso: string): string {
@@ -24,6 +26,20 @@ function formatDateLong(iso: string): string {
   return `${months[m - 1]} ${d}, ${y}`;
 }
 
+function EditRequestBadge({ status }: { status: "Pending" | "Approved" | "Rejected" }) {
+  const styles = {
+    Pending: "bg-amber-50 text-amber-700 ring-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:ring-amber-800",
+    Approved: "bg-emerald-50 text-emerald-700 ring-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:ring-emerald-800",
+    Rejected: "bg-rose-50 text-rose-700 ring-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:ring-rose-800",
+  };
+  const labels = { Pending: "⏳ Awaiting Approval", Approved: "✓ Approved", Rejected: "✗ Rejected" };
+  return (
+    <span className={`inline-flex items-center rounded-full px-3 py-1 text-xs font-semibold ring-1 ${styles[status]}`}>
+      {labels[status]}
+    </span>
+  );
+}
+
 export default function InvoicePage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -32,6 +48,7 @@ export default function InvoicePage() {
   const [data, setData] = useState<InvoiceResponse | null>(null);
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
+  const [submitting, setSubmitting] = useState(false);
   const [downloading, setDownloading] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
@@ -46,7 +63,7 @@ export default function InvoicePage() {
   const isMember = user?.role === "member";
   const onCutoff = isCutoffDay();
   const canAdminEdit = isAdmin && onCutoff && !data?.isFinalized;
-  const canMemberEdit = isMember; // members can always view and edit their invoice
+  const canMemberEdit = isMember;
 
   const [adminEmpId, setAdminEmpId] = useState("");
 
@@ -73,7 +90,6 @@ export default function InvoicePage() {
     }
   }, [status, isAdmin, adminEmpId, fetchInvoice, router]);
 
-  // Compute live payslip preview with member overrides
   function getPreviewPayslip(): PayslipData | null {
     if (!data?.payslip) return null;
     const p = data.payslip;
@@ -107,14 +123,45 @@ export default function InvoicePage() {
     setSaving(false);
   }
 
+  async function handleSubmitEditRequest() {
+    setSubmitting(true);
+    setMessage(null);
+    const res = await fetch("/api/invoice/submit-edit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        recepTaskPay: Number(recepPay) || 0,
+        hoursClaimed: Number(hoursClaimed) || 0,
+        notes,
+      }),
+    });
+    const json = await res.json() as { error?: string };
+    setSubmitting(false);
+    if (res.ok) {
+      setMessage({ type: "success", text: "Edit request submitted! Awaiting admin approval." });
+      void fetchInvoice();
+    } else {
+      setMessage({ type: "error", text: json.error ?? "Failed to submit request" });
+    }
+  }
+
   async function handleDownloadPdf() {
     const preview = getPreviewPayslip();
     if (!preview) return;
     setDownloading(true);
+    setMessage(null);
     try {
-      const { generateInvoicePdf } = await import("@/lib/pdf");
-      const bytes = await generateInvoicePdf(preview);
-      const blob = new Blob([bytes], { type: "application/pdf" });
+      const res = await fetch("/api/invoice/pdf", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(preview),
+      });
+      if (!res.ok) {
+        setMessage({ type: "error", text: "PDF generation failed." });
+        setDownloading(false);
+        return;
+      }
+      const blob = await res.blob();
       const url = URL.createObjectURL(blob);
       const a = document.createElement("a");
       a.href = url;
@@ -137,6 +184,15 @@ export default function InvoicePage() {
   }
 
   const p = getPreviewPayslip() ?? data?.payslip;
+  const editRequest = data?.editRequest ?? null;
+  const editStatus = editRequest?.status ?? null;
+
+  // Members can download only if their edit request is approved
+  // Admins can always download
+  const memberCanDownload = isAdmin || editStatus === "Approved";
+
+  // Members can submit if: no request yet, or previous request was rejected
+  const memberCanSubmit = isMember && (editStatus === null || editStatus === "Rejected");
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
@@ -176,10 +232,49 @@ export default function InvoicePage() {
           </div>
         ) : (
           <>
-            {/* Member edit form — always visible */}
-            {canMemberEdit && (
+            {/* Member edit request status banner */}
+            {isMember && editRequest && (
+              <div className={`mb-4 rounded-2xl px-5 py-4 ring-1 ${
+                editStatus === "Approved"
+                  ? "bg-emerald-50 ring-emerald-200 dark:bg-emerald-900/20 dark:ring-emerald-800"
+                  : editStatus === "Rejected"
+                  ? "bg-rose-50 ring-rose-200 dark:bg-rose-900/20 dark:ring-rose-800"
+                  : "bg-amber-50 ring-amber-200 dark:bg-amber-900/20 dark:ring-amber-800"
+              }`}>
+                <div className="flex flex-wrap items-center justify-between gap-2">
+                  <div>
+                    <p className="text-sm font-semibold text-slate-700 dark:text-slate-300">Invoice Edit Request</p>
+                    <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
+                      Submitted {new Date(editRequest.requestedAt).toLocaleString()}
+                    </p>
+                    {editStatus === "Rejected" && (
+                      <p className="mt-1 text-xs text-rose-600 dark:text-rose-400">
+                        Your request was rejected. You may edit and resubmit below.
+                      </p>
+                    )}
+                    {editStatus === "Approved" && (
+                      <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
+                        Your edits have been approved. You can now download your invoice.
+                      </p>
+                    )}
+                    {editStatus === "Pending" && (
+                      <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
+                        Waiting for Sheehan to review your submission.
+                      </p>
+                    )}
+                  </div>
+                  <EditRequestBadge status={editRequest.status} />
+                </div>
+              </div>
+            )}
+
+            {/* Member edit form */}
+            {canMemberEdit && memberCanSubmit && (
               <div className="mb-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
-                <h3 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">Edit Invoice Fields</h3>
+                <h3 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
+                  Edit Invoice Fields
+                  <span className="ml-2 text-xs font-normal text-slate-400">— submit for admin approval to unlock download</span>
+                </h3>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
                     <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Recep Task Pay (₱)</label>
@@ -196,6 +291,32 @@ export default function InvoicePage() {
                     <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
                       className="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950" />
                   </div>
+                </div>
+                <div className="mt-4 flex items-center gap-3">
+                  <button
+                    onClick={handleSubmitEditRequest}
+                    disabled={submitting}
+                    className="rounded-lg bg-navy-700 px-5 py-2 text-sm font-semibold text-white hover:bg-navy-600 disabled:opacity-60"
+                  >
+                    {submitting ? "Submitting…" : "Submit for Approval"}
+                  </button>
+                  {editStatus === "Rejected" && (
+                    <span className="text-xs text-slate-400">Resubmitting will replace your previous request.</span>
+                  )}
+                </div>
+              </div>
+            )}
+
+            {/* Pending — locked edit notice */}
+            {isMember && editStatus === "Pending" && (
+              <div className="mb-4 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700">
+                <p className="text-xs text-slate-500 dark:text-slate-400">
+                  Your edit request is pending review. You cannot modify it until Sheehan approves or rejects it.
+                </p>
+                <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
+                  <div><span className="text-slate-400">Recep Pay:</span> <span className="font-mono font-medium">{formatPeso(editRequest?.recepTaskPay ?? 0)}</span></div>
+                  <div><span className="text-slate-400">Hours Claimed:</span> <span className="font-mono font-medium">{editRequest?.hoursClaimed ?? 0}</span></div>
+                  {editRequest?.notes && <div className="col-span-2 sm:col-span-1"><span className="text-slate-400">Notes:</span> <span className="font-medium">{editRequest.notes}</span></div>}
                 </div>
               </div>
             )}
@@ -255,7 +376,7 @@ export default function InvoicePage() {
                   <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
                     <tr>
                       <td className="px-3 py-2">Admin Task Pay:</td>
-                      <td className="px-3 py-2" />
+                      <td className="px-3 py-2 text-slate-400 text-[11px]">½ of contract value</td>
                       <td className="px-3 py-2 text-right font-mono">{p.hoursAwarded}</td>
                       <td className="px-3 py-2 text-right font-mono">{formatPeso(p.hourlyRate)}</td>
                       <td className="px-3 py-2 text-right font-mono font-semibold">{formatPeso(p.adminTaskPay)}</td>
@@ -345,16 +466,30 @@ export default function InvoicePage() {
               </div>
             </div>
 
-            {/* Download PDF button — always available */}
-            <div className="mt-4 flex justify-end">
+            {/* Download PDF button */}
+            <div className="mt-4 flex items-center justify-end gap-3">
+              {isMember && !memberCanDownload && (
+                <p className="text-xs text-slate-400">
+                  {editStatus === "Pending"
+                    ? "Download unlocks after admin approval."
+                    : "Submit your edits above for admin approval to download."}
+                </p>
+              )}
               <button
                 onClick={handleDownloadPdf}
-                disabled={downloading}
-                className="flex items-center gap-2 rounded-lg bg-navy-700 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-navy-600 disabled:opacity-60"
+                disabled={downloading || !memberCanDownload}
+                className="flex items-center gap-2 rounded-lg bg-navy-700 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-navy-600 disabled:cursor-not-allowed disabled:opacity-40"
               >
                 {downloading ? "Generating…" : "⬇ Download PDF"}
               </button>
             </div>
+
+            {/* Member message */}
+            {message && (
+              <p className={`mt-3 text-xs text-center ${message.type === "success" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-500"}`}>
+                {message.text}
+              </p>
+            )}
 
             {/* Admin controls */}
             {isAdmin && (
@@ -414,20 +549,7 @@ export default function InvoicePage() {
                     )}
                   </div>
                 )}
-
-                {message && (
-                  <p className={`mt-3 text-xs ${message.type === "success" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-500"}`}>
-                    {message.text}
-                  </p>
-                )}
               </div>
-            )}
-
-            {/* Member message */}
-            {isMember && message && (
-              <p className={`mt-3 text-xs text-center ${message.type === "success" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-500"}`}>
-                {message.text}
-              </p>
             )}
           </>
         )}

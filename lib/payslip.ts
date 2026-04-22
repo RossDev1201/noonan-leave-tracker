@@ -69,6 +69,14 @@ export function getContractConfig(employeeId: string): {
   };
 }
 
+type ContractConfigInput = {
+  contractValue: number;
+  hourlyRate: number;
+  internetFee: number;
+  medicalFee: number;
+  department: string;
+};
+
 export function buildPayslipData(
   employeeId: string,
   employeeName: string,
@@ -83,9 +91,11 @@ export function buildPayslipData(
     payslipId?: string;
     savedAt?: string;
     isFinalized?: boolean;
+    contractConfig?: ContractConfigInput;
+    recepTaskPay?: number;
   } = {}
 ): PayslipData {
-  const config = getContractConfig(employeeId);
+  const config: ContractConfigInput = overrides.contractConfig ?? getContractConfig(employeeId);
 
   const periodEntries = allEntries.filter(
     (e) => e.employeeId === employeeId && e.date >= cutoff.from && e.date <= cutoff.to && !!e.logoutTime
@@ -95,9 +105,16 @@ export function buildPayslipData(
   const hoursAwarded = hoursRendered;
 
   const leaveDaysTaken = overrides.leaveDaysTaken ?? 0;
-  const leaveDeductions = leaveDaysTaken * config.hourlyRate * HOURS_PER_DAY;
-  const adminTaskPay = hoursAwarded * config.hourlyRate;
-  const totalEarnings = adminTaskPay + config.internetFee + config.medicalFee - leaveDeductions;
+  const adminTaskPay = config.contractValue / 2;
+  // Rate shown on invoice = fixed amount ÷ actual hours (varies per cutoff, always totals to adminTaskPay)
+  const displayedHourlyRate = hoursAwarded > 0
+    ? Math.round((adminTaskPay / hoursAwarded) * 100) / 100
+    : config.hourlyRate;
+  // Leave deductions use the base rate (contractValue ÷ 150 = standard 10-day period rate)
+  const baseHourlyRate = config.contractValue > 0 ? config.contractValue / 150 : config.hourlyRate;
+  const leaveDeductions = leaveDaysTaken * baseHourlyRate * HOURS_PER_DAY;
+  const recepTaskPay = overrides.recepTaskPay ?? 0;
+  const totalEarnings = adminTaskPay + recepTaskPay + config.internetFee + config.medicalFee - leaveDeductions;
 
   // Contract duration from hire to cutoff end
   const hire = new Date(hireDate);
@@ -132,9 +149,9 @@ export function buildPayslipData(
     cutoff,
     hoursRendered,
     hoursAwarded,
-    hourlyRate: config.hourlyRate,
+    hourlyRate: displayedHourlyRate,
     adminTaskPay,
-    recepTaskPay: 0,
+    recepTaskPay,
     internetFee: config.internetFee,
     medicalFee: config.medicalFee,
     leaveDeductions,
