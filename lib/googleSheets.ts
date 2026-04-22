@@ -157,14 +157,19 @@ export async function getTodayStatus(
 ): Promise<{ status: "not_clocked_in" | "clocked_in" | "clocked_out"; loginTime?: string; logoutTime?: string }> {
   const sheets = getSheetsClient();
 
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: TIME_RANGE,
-  });
+  let rows: string[][] = [];
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: TIME_RANGE,
+    });
+    rows = (res.data.values ?? []) as string[][];
+  } catch {
+    // TimeTracking sheet missing or unreadable — treat as not clocked in
+    return { status: "not_clocked_in" };
+  }
 
-  const rows = res.data.values ?? [];
   let best: { loginTime: string; logoutTime: string } | null = null;
-
   for (const row of rows) {
     const [empId, rowDate, loginTime, logoutTime] = row;
     if (String(empId) === employeeId && String(rowDate) === date) {
@@ -180,25 +185,28 @@ export async function getTodayStatus(
 export async function getTimeEntriesForEmployee(employeeId: string): Promise<TimeEntry[]> {
   const sheets = getSheetsClient();
 
-  const res = await sheets.spreadsheets.values.get({
-    spreadsheetId: SPREADSHEET_ID,
-    range: TIME_RANGE,
-  });
-
-  return (res.data.values ?? [])
-    .map((row, i) => {
-      const [empId, date, loginTime, logoutTime, hoursWorked] = row;
-      return {
-        rowIndex: i + 2,
-        employeeId: String(empId ?? ""),
-        date: String(date ?? ""),
-        loginTime: String(loginTime ?? ""),
-        logoutTime: String(logoutTime ?? ""),
-        hoursWorked: logoutTime ? PAID_HOURS_PER_DAY : 0,
-      };
-    })
-    .filter((e) => e.employeeId === employeeId && e.date)
-    .sort((a, b) => b.date.localeCompare(a.date));
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: TIME_RANGE,
+    });
+    return (res.data.values ?? [])
+      .map((row, i) => {
+        const [empId, date, loginTime, logoutTime] = row;
+        return {
+          rowIndex: i + 2,
+          employeeId: String(empId ?? ""),
+          date: String(date ?? ""),
+          loginTime: String(loginTime ?? ""),
+          logoutTime: String(logoutTime ?? ""),
+          hoursWorked: logoutTime ? PAID_HOURS_PER_DAY : 0,
+        };
+      })
+      .filter((e) => e.employeeId === employeeId && e.date)
+      .sort((a, b) => b.date.localeCompare(a.date));
+  } catch {
+    return [];
+  }
 }
 
 // ─── Payslips ─────────────────────────────────────────────────────────────────
