@@ -1,114 +1,85 @@
-// lib/googleSheets.ts
 import { google } from "googleapis";
 import type { EmployeeRaw, LeaveEntry } from "./leave";
+import type { PayslipData } from "./payslip";
+import type { CutoffPeriod } from "./cutoff";
 
-// Import your service account JSON directly (file must be in project root)
-import serviceAccount from "../noonan-leave-tracker-c097e5e73e07.json";
-
-type ServiceAccount = {
-  client_email: string;
-  private_key: string;
+export type TimeEntry = {
+  rowIndex: number;
+  employeeId: string;
+  date: string;      // YYYY-MM-DD
+  loginTime: string; // HH:MM
+  logoutTime: string; // HH:MM or ""
+  hoursWorked: number; // 7.5 for a complete day, 0 if incomplete
 };
 
-const sa = serviceAccount as ServiceAccount;
+const SPREADSHEET_ID = process.env.GOOGLE_SHEETS_SPREADSHEET_ID ?? "";
+const SERVICE_ACCOUNT_EMAIL = process.env.GOOGLE_SERVICE_ACCOUNT_EMAIL ?? "";
+const SERVICE_ACCOUNT_PRIVATE_KEY = (
+  process.env.GOOGLE_SERVICE_ACCOUNT_PRIVATE_KEY ?? ""
+).replace(/\\n/g, "\n");
 
-// ✅ Your spreadsheet ID from the URL:
-// https://docs.google.com/spreadsheets/d/THIS_ID/edit
-const SPREADSHEET_ID = "1OE6gwRSwdZ7C-YVyP-2ai58CiHSh9G4Y1dqRBPHuYtY";
+const EMPLOYEES_RANGE = "Employees!A2:E";
+const LEAVES_RANGE = "Leaves!A2:E";
+const TIME_RANGE = "TimeTracking!A2:E";
+const PAYSLIPS_RANGE = "Payslips!A2:P";
 
-// ✅ Sheet/tab names & ranges
-const EMPLOYEES_RANGE = "Employees!A2:E"; // id, fullName, position, hireDate, startingBalance
-const LEAVES_RANGE = "Leaves!A2:E";       // employeeId, date, days, type, note
-
-const SERVICE_ACCOUNT_EMAIL = sa.client_email;
-const SERVICE_ACCOUNT_PRIVATE_KEY = sa.private_key;
+const PAID_HOURS_PER_DAY = 7.5;
 
 function getSheetsClient() {
-  console.log("Using Sheets config:", {
-    SPREADSHEET_ID,
-    SERVICE_ACCOUNT_EMAIL,
-    hasPrivateKey: !!SERVICE_ACCOUNT_PRIVATE_KEY
-  });
-
   if (!SPREADSHEET_ID || !SERVICE_ACCOUNT_EMAIL || !SERVICE_ACCOUNT_PRIVATE_KEY) {
-    console.error("Google Sheets config missing", {
-      SPREADSHEET_ID,
-      SERVICE_ACCOUNT_EMAIL,
-      hasPrivateKey: !!SERVICE_ACCOUNT_PRIVATE_KEY
-    });
-    throw new Error("Google Sheets is not configured.");
+    throw new Error("Google Sheets environment variables are not configured.");
   }
 
   const auth = new google.auth.JWT({
     email: SERVICE_ACCOUNT_EMAIL,
-    // Value from JSON already has proper newlines
     key: SERVICE_ACCOUNT_PRIVATE_KEY,
-    scopes: ["https://www.googleapis.com/auth/spreadsheets"]
+    scopes: ["https://www.googleapis.com/auth/spreadsheets"],
   });
 
-  const sheets = google.sheets({ version: "v4", auth });
-  return sheets;
+  return google.sheets({ version: "v4", auth });
 }
+
+// ─── Employees & Leave ────────────────────────────────────────────────────────
 
 export async function fetchEmployeesFromSheet(): Promise<EmployeeRaw[]> {
   const sheets = getSheetsClient();
 
-  try {
-    // Read Employees sheet (skip header row)
-    const employeesRes = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: EMPLOYEES_RANGE
+  const [employeesRes, leavesRes] = await Promise.all([
+    sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: EMPLOYEES_RANGE }),
+    sheets.spreadsheets.values.get({ spreadsheetId: SPREADSHEET_ID, range: LEAVES_RANGE }),
+  ]);
+
+  const employees: EmployeeRaw[] = (employeesRes.data.values ?? []).map((row) => {
+    const [id, fullName, position, hireDate, startingBalance] = row;
+    return {
+      id: String(id),
+      fullName: String(fullName),
+      position: String(position ?? ""),
+      hireDate: String(hireDate),
+      startingBalance: startingBalance ? Number(startingBalance) : 0,
+      leaveTaken: [],
+    };
+  });
+
+  const leavesByEmployee: Record<string, LeaveEntry[]> = {};
+  for (const row of leavesRes.data.values ?? []) {
+    const [employeeId, date, days, type, note] = row;
+    if (!employeeId || !date || !days || !type) continue;
+    const key = String(employeeId);
+    if (!leavesByEmployee[key]) leavesByEmployee[key] = [];
+    leavesByEmployee[key].push({
+      date: String(date),
+      days: Number(days),
+      type: String(type),
+      note: note ? String(note) : undefined,
     });
-
-    const employeeRows = employeesRes.data.values || [];
-
-    const employees: EmployeeRaw[] = employeeRows.map((row) => {
-      const [id, fullName, position, hireDate, startingBalance] = row;
-
-      return {
-        id: String(id),
-        fullName: String(fullName),
-        position: String(position ?? ""),
-        hireDate: String(hireDate), // YYYY-MM-DD
-        startingBalance: startingBalance ? Number(startingBalance) : 0,
-        leaveTaken: []
-      };
-    });
-
-    // Read Leaves sheet
-    const leavesRes = await sheets.spreadsheets.values.get({
-      spreadsheetId: SPREADSHEET_ID,
-      range: LEAVES_RANGE
-    });
-
-    const leaveRows = leavesRes.data.values || [];
-    const leavesByEmployee: Record<string, LeaveEntry[]> = {};
-
-    for (const row of leaveRows) {
-      const [employeeId, date, days, type, note] = row;
-      if (!employeeId || !date || !days || !type) continue;
-
-      const entry: LeaveEntry = {
-        date: String(date),
-        days: Number(days),
-        type: String(type),
-        note: note ? String(note) : undefined
-      };
-
-      const key = String(employeeId);
-      if (!leavesByEmployee[key]) leavesByEmployee[key] = [];
-      leavesByEmployee[key].push(entry);
-    }
-
-    for (const emp of employees) {
-      emp.leaveTaken = leavesByEmployee[emp.id] ?? [];
-    }
-
-    return employees;
-  } catch (err) {
-    console.error("Error reading from Google Sheets:", err);
-    throw err;
   }
+
+  for (const emp of employees) {
+    emp.leaveTaken = leavesByEmployee[emp.id] ?? [];
+  }
+
+  return employees;
 }
 
 export async function appendLeaveToSheet(
@@ -116,18 +87,383 @@ export async function appendLeaveToSheet(
   entry: LeaveEntry
 ): Promise<void> {
   const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: "Leaves!A:E",
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[employeeId, entry.date, entry.days, entry.type, entry.note ?? ""]],
+    },
+  });
+}
 
+// ─── Time Tracking ────────────────────────────────────────────────────────────
+
+export async function recordLogin(
+  employeeId: string,
+  date: string,
+  loginTime: string
+): Promise<void> {
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: "TimeTracking!A:E",
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[employeeId, date, loginTime, "", ""]],
+    },
+  });
+}
+
+export async function recordLogout(
+  employeeId: string,
+  date: string,
+  logoutTime: string
+): Promise<boolean> {
+  const sheets = getSheetsClient();
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: TIME_RANGE,
+  });
+
+  const rows = res.data.values ?? [];
+  let targetRow = -1;
+
+  for (let i = 0; i < rows.length; i++) {
+    const [empId, rowDate, , logoutVal] = rows[i];
+    if (String(empId) === employeeId && String(rowDate) === date && !logoutVal) {
+      targetRow = i + 2; // +1 for 1-index, +1 for header row
+    }
+  }
+
+  if (targetRow === -1) return false;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `TimeTracking!D${targetRow}:E${targetRow}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[logoutTime, PAID_HOURS_PER_DAY]],
+    },
+  });
+
+  return true;
+}
+
+export async function getTodayStatus(
+  employeeId: string,
+  date: string
+): Promise<{ status: "not_clocked_in" | "clocked_in" | "clocked_out"; loginTime?: string; logoutTime?: string }> {
+  const sheets = getSheetsClient();
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: TIME_RANGE,
+  });
+
+  const rows = res.data.values ?? [];
+  let best: { loginTime: string; logoutTime: string } | null = null;
+
+  for (const row of rows) {
+    const [empId, rowDate, loginTime, logoutTime] = row;
+    if (String(empId) === employeeId && String(rowDate) === date) {
+      best = { loginTime: String(loginTime ?? ""), logoutTime: String(logoutTime ?? "") };
+    }
+  }
+
+  if (!best) return { status: "not_clocked_in" };
+  if (!best.logoutTime) return { status: "clocked_in", loginTime: best.loginTime };
+  return { status: "clocked_out", loginTime: best.loginTime, logoutTime: best.logoutTime };
+}
+
+export async function getTimeEntriesForEmployee(employeeId: string): Promise<TimeEntry[]> {
+  const sheets = getSheetsClient();
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: TIME_RANGE,
+  });
+
+  return (res.data.values ?? [])
+    .map((row, i) => {
+      const [empId, date, loginTime, logoutTime, hoursWorked] = row;
+      return {
+        rowIndex: i + 2,
+        employeeId: String(empId ?? ""),
+        date: String(date ?? ""),
+        loginTime: String(loginTime ?? ""),
+        logoutTime: String(logoutTime ?? ""),
+        hoursWorked: logoutTime ? PAID_HOURS_PER_DAY : 0,
+      };
+    })
+    .filter((e) => e.employeeId === employeeId && e.date)
+    .sort((a, b) => b.date.localeCompare(a.date));
+}
+
+// ─── Payslips ─────────────────────────────────────────────────────────────────
+
+export type SavedPayslipRow = {
+  payslipId: string;
+  employeeId: string;
+  periodFrom: string;
+  periodTo: string;
+  invoiceNo: string;
+  hoursRendered: number;
+  hoursAwarded: number;
+  hourlyRate: number;
+  adminPay: number;
+  internetFee: number;
+  medicalFee: number;
+  leaveDeductions: number;
+  leaveDaysTaken: number;
+  totalEarnings: number;
+  timeBankBalance: number;
+  savedAt: string;
+  notes: string;
+};
+
+export async function getPayslipsForEmployee(employeeId: string): Promise<SavedPayslipRow[]> {
+  const sheets = getSheetsClient();
   try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: PAYSLIPS_RANGE,
+    });
+    return (res.data.values ?? [])
+      .map((row) => ({
+        payslipId: String(row[0] ?? ""),
+        employeeId: String(row[1] ?? ""),
+        periodFrom: String(row[2] ?? ""),
+        periodTo: String(row[3] ?? ""),
+        invoiceNo: String(row[4] ?? ""),
+        hoursRendered: Number(row[5] ?? 0),
+        hoursAwarded: Number(row[6] ?? 0),
+        hourlyRate: Number(row[7] ?? 0),
+        adminPay: Number(row[8] ?? 0),
+        internetFee: Number(row[9] ?? 0),
+        medicalFee: Number(row[10] ?? 0),
+        leaveDeductions: Number(row[11] ?? 0),
+        leaveDaysTaken: Number(row[12] ?? 0),
+        totalEarnings: Number(row[13] ?? 0),
+        timeBankBalance: Number(row[14] ?? 0),
+        savedAt: String(row[15] ?? ""),
+        notes: String(row[16] ?? ""),
+      }))
+      .filter((r) => r.employeeId === employeeId && r.payslipId);
+  } catch {
+    return [];
+  }
+}
+
+export async function getAllPayslips(): Promise<SavedPayslipRow[]> {
+  const sheets = getSheetsClient();
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: PAYSLIPS_RANGE,
+    });
+    return (res.data.values ?? [])
+      .filter((row) => row[0] && row[1])
+      .map((row) => ({
+        payslipId: String(row[0]),
+        employeeId: String(row[1]),
+        periodFrom: String(row[2] ?? ""),
+        periodTo: String(row[3] ?? ""),
+        invoiceNo: String(row[4] ?? ""),
+        hoursRendered: Number(row[5] ?? 0),
+        hoursAwarded: Number(row[6] ?? 0),
+        hourlyRate: Number(row[7] ?? 0),
+        adminPay: Number(row[8] ?? 0),
+        internetFee: Number(row[9] ?? 0),
+        medicalFee: Number(row[10] ?? 0),
+        leaveDeductions: Number(row[11] ?? 0),
+        leaveDaysTaken: Number(row[12] ?? 0),
+        totalEarnings: Number(row[13] ?? 0),
+        timeBankBalance: Number(row[14] ?? 0),
+        savedAt: String(row[15] ?? ""),
+        notes: String(row[16] ?? ""),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+export async function savePayslip(data: PayslipData): Promise<void> {
+  const sheets = getSheetsClient();
+  const row = [
+    data.payslipId,
+    data.employeeId,
+    data.cutoff.from,
+    data.cutoff.to,
+    data.invoiceNo,
+    data.hoursRendered,
+    data.hoursAwarded,
+    data.hourlyRate,
+    data.adminTaskPay,
+    data.internetFee,
+    data.medicalFee,
+    data.leaveDeductions,
+    data.leaveDaysTaken,
+    data.totalEarnings,
+    data.timeBankBalance,
+    data.savedAt ?? new Date().toISOString(),
+    data.notes ?? "",
+  ];
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: "Payslips!A:Q",
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [row] },
+  });
+}
+
+export async function updatePayslipLeaves(
+  payslipId: string,
+  leaveDaysTaken: number,
+  leaveDeductions: number,
+  totalEarnings: number
+): Promise<boolean> {
+  const sheets = getSheetsClient();
+  let res;
+  try {
+    res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: PAYSLIPS_RANGE,
+    });
+  } catch {
+    return false;
+  }
+
+  const rows = res.data.values ?? [];
+  let targetRow = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]) === payslipId) {
+      targetRow = i + 2;
+      break;
+    }
+  }
+  if (targetRow === -1) return false;
+
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `Payslips!L${targetRow}:N${targetRow}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[leaveDeductions, leaveDaysTaken, totalEarnings]] },
+  });
+  return true;
+}
+
+export async function getPayslipForCutoff(
+  employeeId: string,
+  cutoff: CutoffPeriod
+): Promise<SavedPayslipRow | null> {
+  const all = await getPayslipsForEmployee(employeeId);
+  return all.find((p) => p.periodFrom === cutoff.from && p.periodTo === cutoff.to) ?? null;
+}
+
+// ─── Schedules ────────────────────────────────────────────────────────────────
+
+const SCHEDULES_RANGE = "Schedules!A2:D";
+
+export type EmployeeSchedule = {
+  employeeId: string;
+  startTime: string;  // HH:MM
+  endTime: string;    // HH:MM
+  graceMinutes: number;
+};
+
+export async function getAllSchedules(): Promise<EmployeeSchedule[]> {
+  const sheets = getSheetsClient();
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: SCHEDULES_RANGE,
+    });
+    return (res.data.values ?? [])
+      .filter((r) => r[0])
+      .map((r) => ({
+        employeeId: String(r[0]),
+        startTime: String(r[1] ?? "09:00"),
+        endTime: String(r[2] ?? "17:00"),
+        graceMinutes: Number(r[3] ?? 5),
+      }));
+  } catch {
+    return [];
+  }
+}
+
+export async function getScheduleForEmployee(employeeId: string): Promise<EmployeeSchedule | null> {
+  const all = await getAllSchedules();
+  return all.find((s) => s.employeeId === employeeId) ?? null;
+}
+
+export async function upsertSchedule(schedule: EmployeeSchedule): Promise<void> {
+  const sheets = getSheetsClient();
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: SCHEDULES_RANGE,
+  });
+
+  const rows = res.data.values ?? [];
+  let targetRow = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]) === schedule.employeeId) {
+      targetRow = i + 2;
+      break;
+    }
+  }
+
+  const rowData = [
+    schedule.employeeId,
+    schedule.startTime,
+    schedule.endTime,
+    schedule.graceMinutes,
+  ];
+
+  if (targetRow !== -1) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `Schedules!A${targetRow}:D${targetRow}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [rowData] },
+    });
+  } else {
     await sheets.spreadsheets.values.append({
       spreadsheetId: SPREADSHEET_ID,
-      range: "Leaves!A:E",
+      range: "Schedules!A:D",
       valueInputOption: "USER_ENTERED",
-      requestBody: {
-        values: [[employeeId, entry.date, entry.days, entry.type, entry.note ?? ""]]
-      }
+      requestBody: { values: [rowData] },
     });
-  } catch (err) {
-    console.error("Error appending to Leaves sheet:", err);
-    throw err;
   }
+}
+
+export async function getAllTimeEntries(): Promise<Record<string, TimeEntry[]>> {
+  const sheets = getSheetsClient();
+
+  const res = await sheets.spreadsheets.values.get({
+    spreadsheetId: SPREADSHEET_ID,
+    range: TIME_RANGE,
+  });
+
+  const result: Record<string, TimeEntry[]> = {};
+
+  (res.data.values ?? []).forEach((row, i) => {
+    const [empId, date, loginTime, logoutTime] = row;
+    if (!empId || !date) return;
+
+    const key = String(empId);
+    if (!result[key]) result[key] = [];
+
+    result[key].push({
+      rowIndex: i + 2,
+      employeeId: key,
+      date: String(date),
+      loginTime: String(loginTime ?? ""),
+      logoutTime: String(logoutTime ?? ""),
+      hoursWorked: logoutTime ? PAID_HOURS_PER_DAY : 0,
+    });
+  });
+
+  return result;
 }
