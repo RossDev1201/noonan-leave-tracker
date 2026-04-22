@@ -93,7 +93,21 @@ export default function AdminPage() {
   const [savedContracts, setSavedContracts] = useState<SavedContract[]>([]);
   const [editRequests, setEditRequests] = useState<InvoiceEditRequest[]>([]);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"leave" | "schedules" | "contracts" | "editRequests">("leave");
+  const [activeTab, setActiveTab] = useState<"leave" | "schedules" | "contracts" | "editRequests" | "attendance">("leave");
+
+  // Attendance / manual punch state
+  const [punchEmpId, setPunchEmpId] = useState("");
+  const [punchDate, setPunchDate] = useState(new Date().toISOString().slice(0, 10));
+  const [punchLogin, setPunchLogin] = useState("09:00");
+  const [punchLogout, setPunchLogout] = useState("17:00");
+  const [punchSaving, setPunchSaving] = useState(false);
+  const [punchMessage, setPunchMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Backfill state
+  const [backfillFrom, setBackfillFrom] = useState("");
+  const [backfillTo, setBackfillTo] = useState(new Date().toISOString().slice(0, 10));
+  const [backfillRunning, setBackfillRunning] = useState(false);
+  const [backfillResult, setBackfillResult] = useState<{ inserted: number; skipped: number; workingDays: string[] } | null>(null);
 
   const today = new Date().toISOString().slice(0, 10);
 
@@ -105,6 +119,12 @@ export default function AdminPage() {
       void fetchSchedules();
       void fetchContracts();
       void fetchEditRequests();
+      // Default backfill from = current cutoff start (16th of month or 1st)
+      const now = new Date();
+      const day = now.getDate();
+      const mm = String(now.getMonth() + 1).padStart(2, "0");
+      const yyyy = String(now.getFullYear());
+      setBackfillFrom(day <= 15 ? `${yyyy}-${mm}-01` : `${yyyy}-${mm}-16`);
     }
   }, [status, user, router]);
 
@@ -249,6 +269,45 @@ export default function AdminPage() {
     }
   }
 
+  async function handleManualPunch() {
+    if (!punchEmpId || !punchDate || !punchLogin) return;
+    setPunchSaving(true);
+    setPunchMessage(null);
+    const res = await fetch("/api/admin/time-entry", {
+      method: "PUT",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({
+        employeeId: punchEmpId,
+        date: punchDate,
+        loginTime: punchLogin,
+        logoutTime: punchLogout,
+      }),
+    });
+    setPunchSaving(false);
+    if (res.ok) {
+      setPunchMessage({ type: "success", text: `Saved: ${punchEmpId} on ${punchDate} — ${punchLogin} / ${punchLogout}` });
+    } else {
+      const j = await res.json() as { error?: string };
+      setPunchMessage({ type: "error", text: j.error ?? "Failed to save" });
+    }
+  }
+
+  async function handleBackfill() {
+    if (!backfillFrom || !backfillTo) return;
+    setBackfillRunning(true);
+    setBackfillResult(null);
+    const res = await fetch("/api/admin/backfill", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ from: backfillFrom, to: backfillTo }),
+    });
+    setBackfillRunning(false);
+    if (res.ok) {
+      const data = await res.json() as { inserted: number; skipped: number; workingDays: string[] };
+      setBackfillResult(data);
+    }
+  }
+
   async function handleReviewEditRequest(requestId: string, status: "Approved" | "Rejected") {
     setReviewingId(requestId);
     const res = await fetch("/api/admin/invoice-requests", {
@@ -340,6 +399,7 @@ export default function AdminPage() {
             { key: "schedules", label: "Schedules" },
             { key: "contracts", label: "Contracts" },
             { key: "editRequests", label: `Edit Requests${editRequests.filter(r => r.status === "Pending").length > 0 ? ` (${editRequests.filter(r => r.status === "Pending").length})` : ""}` },
+            { key: "attendance", label: "Attendance" },
           ] as const).map(({ key, label }) => (
             <button
               key={key}
@@ -708,6 +768,128 @@ export default function AdminPage() {
             )}
           </section>
         )}
+        {/* ── ATTENDANCE TAB ── */}
+        {activeTab === "attendance" && (
+          <div className="space-y-4">
+
+            {/* Manual Punch Override */}
+            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+              <h2 className="mb-1 text-base font-semibold">Manual Punch Override</h2>
+              <p className="mb-4 text-xs text-slate-400">Override or add a clock in/out entry for any employee on any date.</p>
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-400">Employee</label>
+                  <select
+                    value={punchEmpId}
+                    onChange={(e) => setPunchEmpId(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950"
+                  >
+                    <option value="">— Select employee —</option>
+                    {employees.map((emp) => (
+                      <option key={emp.id} value={emp.id}>{emp.fullName} ({emp.id})</option>
+                    ))}
+                  </select>
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-400">Date</label>
+                  <input
+                    type="date"
+                    value={punchDate}
+                    onChange={(e) => setPunchDate(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-400">Clock In</label>
+                  <input
+                    type="time"
+                    value={punchLogin}
+                    onChange={(e) => setPunchLogin(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-400">Clock Out</label>
+                  <input
+                    type="time"
+                    value={punchLogout}
+                    onChange={(e) => setPunchLogout(e.target.value)}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950"
+                  />
+                </div>
+                <div className="flex items-end">
+                  <button
+                    disabled={punchSaving || !punchEmpId || !punchDate || !punchLogin}
+                    onClick={handleManualPunch}
+                    className="w-full rounded-lg bg-navy-700 px-4 py-2 text-sm font-semibold text-white hover:bg-navy-600 disabled:opacity-50"
+                  >
+                    {punchSaving ? "Saving…" : "Save Entry"}
+                  </button>
+                </div>
+              </div>
+              {punchMessage && (
+                <p className={`mt-3 text-xs ${punchMessage.type === "success" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-500"}`}>
+                  {punchMessage.text}
+                </p>
+              )}
+            </section>
+
+            {/* Backfill */}
+            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+              <h2 className="mb-1 text-base font-semibold">Backfill Period</h2>
+              <p className="mb-4 text-xs text-slate-400">
+                Inserts attendance records for ALL employees for every working day in the range.
+                Skips existing entries. Excludes weekends &amp; Australian public holidays (incl. ANZAC Day Apr 27).
+              </p>
+              <div className="flex flex-wrap items-end gap-3">
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-400">From</label>
+                  <input
+                    type="date"
+                    value={backfillFrom}
+                    onChange={(e) => setBackfillFrom(e.target.value)}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-[11px] font-medium text-slate-400">To</label>
+                  <input
+                    type="date"
+                    value={backfillTo}
+                    onChange={(e) => setBackfillTo(e.target.value)}
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950"
+                  />
+                </div>
+                <button
+                  disabled={backfillRunning || !backfillFrom || !backfillTo}
+                  onClick={handleBackfill}
+                  className="rounded-lg bg-emerald-600 px-5 py-2 text-sm font-semibold text-white hover:bg-emerald-500 disabled:opacity-50"
+                >
+                  {backfillRunning ? "Running…" : "Run Backfill"}
+                </button>
+              </div>
+
+              {backfillResult && (
+                <div className="mt-4 rounded-xl bg-slate-50 p-4 dark:bg-slate-800">
+                  <div className="mb-2 flex gap-4 text-sm">
+                    <span className="text-emerald-600 font-semibold">✓ {backfillResult.inserted} entries inserted</span>
+                    <span className="text-slate-400">{backfillResult.skipped} skipped (already existed)</span>
+                  </div>
+                  <p className="mb-1 text-[11px] font-medium text-slate-400 uppercase tracking-wide">Working days in range ({backfillResult.workingDays.length})</p>
+                  <div className="flex flex-wrap gap-1.5">
+                    {backfillResult.workingDays.map((d) => (
+                      <span key={d} className="rounded-md bg-white px-2 py-0.5 font-mono text-[11px] ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
+                        {d}
+                      </span>
+                    ))}
+                  </div>
+                </div>
+              )}
+            </section>
+
+          </div>
+        )}
+
       </div>
     </main>
   );

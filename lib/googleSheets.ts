@@ -722,6 +722,64 @@ export async function getEditRequestForPeriod(
   return forPeriod[0] ?? null;
 }
 
+export async function upsertTimeEntry(
+  employeeId: string,
+  date: string,
+  loginTime: string,
+  logoutTime: string
+): Promise<void> {
+  const sheets = getSheetsClient();
+  let rows: string[][] = [];
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: TIME_RANGE,
+    });
+    rows = (res.data.values ?? []) as string[][];
+  } catch {
+    rows = [];
+  }
+
+  let targetRow = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]) === employeeId && String(rows[i][1]) === date) {
+      targetRow = i + 2;
+      break;
+    }
+  }
+
+  const rowData = [employeeId, date, loginTime, logoutTime, logoutTime ? PAID_HOURS_PER_DAY : 0];
+
+  if (targetRow !== -1) {
+    await sheets.spreadsheets.values.update({
+      spreadsheetId: SPREADSHEET_ID,
+      range: `TimeTracking!A${targetRow}:E${targetRow}`,
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [rowData] },
+    });
+  } else {
+    await sheets.spreadsheets.values.append({
+      spreadsheetId: SPREADSHEET_ID,
+      range: "TimeTracking!A:E",
+      valueInputOption: "USER_ENTERED",
+      requestBody: { values: [rowData] },
+    });
+  }
+}
+
+export async function bulkAppendTimeEntries(
+  rows: Array<[string, string, string, string, number]>
+): Promise<void> {
+  if (rows.length === 0) return;
+  const sheets = getSheetsClient();
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: "TimeTracking!A:E",
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: rows },
+  });
+}
+
 export async function getAllTimeEntries(): Promise<Record<string, TimeEntry[]>> {
   const sheets = getSheetsClient();
 
