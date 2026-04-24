@@ -24,12 +24,12 @@ export function ThemeToggle({ className = "" }: { className?: string }) {
     <button
       onClick={toggle}
       aria-label="Toggle theme"
-      className={`rounded-lg px-2.5 py-1.5 text-sm transition-colors
-        bg-slate-100 hover:bg-slate-200 text-slate-700
-        dark:bg-slate-800 dark:hover:bg-slate-700 dark:text-slate-300
+      className={`border px-3 py-1.5 text-xs font-semibold tracking-wide transition-colors
+        border-noonan-lightgray bg-white text-noonan-gray hover:border-noonan-red hover:text-noonan-red
+        dark:border-[#333] dark:bg-[#111] dark:text-noonan-cream dark:hover:border-noonan-red dark:hover:text-noonan-red
         ${className}`}
     >
-      {dark ? "☀ Light" : "🌙 Dark"}
+      {dark ? "☀ Light" : "◑ Dark"}
     </button>
   );
 }

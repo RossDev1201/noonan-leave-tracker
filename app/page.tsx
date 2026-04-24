@@ -345,55 +345,61 @@ export default function AdminPage() {
 
   if (status === "loading" || (status === "authenticated" && user?.role !== "admin")) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
+      <div className="flex min-h-screen items-center justify-center bg-noonan-cream dark:bg-black">
         <p className="text-sm text-slate-400">Loading…</p>
       </div>
     );
   }
 
   return (
-    <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
+    <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-black dark:text-slate-100">
       <div className="mx-auto max-w-6xl px-4 py-8">
 
         {/* Header */}
         <header className="mb-6 flex flex-wrap items-center justify-between gap-4">
           <div>
-            <h1 className="text-2xl font-bold text-navy-700 dark:text-navy-300">Noonan Admin</h1>
+            <h1 className="text-2xl font-bold text-noonan-red">Noonan Admin</h1>
             <p className="mt-0.5 text-xs text-slate-500 dark:text-slate-400">
               Leave &amp; Invoice Tracker · {user?.name}
             </p>
           </div>
           <div className="flex flex-wrap items-center gap-2">
-            <span className="rounded-lg bg-slate-200 px-3 py-1.5 font-mono text-xs text-slate-600 dark:bg-slate-800 dark:text-slate-300">
+            <span className="rounded-lg bg-slate-200 px-3 py-1.5 font-mono text-xs text-slate-600 dark:bg-[#1a1a1a] dark:text-slate-300">
               {today}
             </span>
             <ThemeToggle />
             <button
               onClick={() => router.push("/invoice")}
-              className="rounded-lg bg-navy-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-navy-600"
+              className="rounded-lg bg-noonan-red px-3 py-1.5 text-xs font-semibold text-white hover:bg-noonan-red-dark"
             >
               View Invoice
             </button>
             <button
               onClick={() => router.push("/history")}
-              className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
+              className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-300 dark:bg-[#1a1a1a] dark:text-slate-300 dark:hover:bg-slate-700"
             >
               Payslip History
             </button>
             <button
+              onClick={() => router.push("/help")}
+              className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-300 dark:bg-[#1a1a1a] dark:text-slate-300 dark:hover:bg-slate-700"
+            >
+              Help
+            </button>
+            <button
               onClick={() => signOut({ callbackUrl: "/login" })}
-              className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700"
+              className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-300 dark:bg-[#1a1a1a] dark:text-slate-400 dark:hover:bg-slate-700"
             >
               Sign out
             </button>
           </div>
         </header>
 
-        {loading && <div className="mb-4 rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-500 dark:bg-slate-900">Loading employees…</div>}
+        {loading && <div className="mb-4 rounded-xl bg-slate-100 px-4 py-3 text-sm text-slate-500 dark:bg-[#111]">Loading employees…</div>}
         {error && <div className="mb-4 rounded-xl bg-rose-50 px-4 py-3 text-sm text-rose-600 ring-1 ring-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:ring-rose-800">{error}</div>}
 
         {/* Tab switcher */}
-        <div className="mb-4 flex gap-1 rounded-xl bg-slate-200 p-1 dark:bg-slate-800">
+        <div className="mb-4 flex gap-1 rounded-xl bg-slate-200 p-1 dark:bg-[#1a1a1a]">
           {([
             { key: "leave", label: "Leave" },
             { key: "schedules", label: "Schedules" },
@@ -417,7 +423,7 @@ export default function AdminPage() {
 
         {/* ── LEAVE TAB ── */}
         {activeTab === "leave" && (
-          <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+          <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-[#111] dark:border-[#333]">
             <div className="mb-4 flex flex-wrap items-center justify-between gap-2">
               <h2 className="text-base font-semibold">Employees — Leave Overview</h2>
               <p className="max-w-sm text-xs text-slate-400">
@@ -447,7 +453,7 @@ export default function AdminPage() {
                     const balance = Number(emp.leaveBalance ?? 0);
                     const available = Number(emp.availableLeaveToUse ?? 0);
                     return (
-                      <tr key={emp.id} className="rounded-xl bg-slate-50 align-top shadow-sm ring-1 ring-slate-200 dark:bg-slate-800/60 dark:ring-slate-700">
+                      <tr key={emp.id} className="rounded-xl bg-slate-50 align-top shadow-sm ring-1 ring-slate-200 dark:bg-[#1a1a1a]/60 dark:border-[#444]">
                         <td className="px-3 py-3">
                           <div className="flex flex-col">
                             <span className="font-medium">{emp.fullName}</span>
@@ -500,19 +506,19 @@ export default function AdminPage() {
                         <td className="px-3 py-3 text-xs">
                           <div className="flex flex-col gap-1">
                             <input type="date" value={form.date} onChange={(e) => updateFormField(emp.id, "date", e.target.value)}
-                              className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-900" />
+                              className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-[#111]" />
                             <input type="number" min={0} step={0.5} placeholder="Days" value={form.days} onChange={(e) => updateFormField(emp.id, "days", e.target.value)}
-                              className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-900" />
+                              className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-[#111]" />
                             <select value={form.type} onChange={(e) => updateFormField(emp.id, "type", e.target.value)}
-                              className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-900">
+                              className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-[#111]">
                               <option>Annual</option><option>Sick</option><option>Unpaid</option><option>Other</option>
                             </select>
                             <textarea rows={2} placeholder="Note" value={form.note} onChange={(e) => updateFormField(emp.id, "note", e.target.value)}
-                              className="w-full resize-none rounded-md border border-slate-300 bg-white px-2 py-1 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-900" />
+                              className="w-full resize-none rounded-md border border-slate-300 bg-white px-2 py-1 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-[#111]" />
                             <button disabled={form.loading || !emp.canUseLeave} onClick={() => handleAddLeave(emp.id)}
                               className={`mt-1 rounded-md px-2 py-1.5 text-xs font-semibold ${
                                 emp.canUseLeave
-                                  ? "bg-navy-700 text-white hover:bg-navy-600 disabled:opacity-60"
+                                  ? "bg-noonan-red text-white hover:bg-noonan-red-dark disabled:opacity-60"
                                   : "cursor-not-allowed bg-slate-200 text-slate-400 dark:bg-slate-700 dark:text-slate-500"
                               }`}>
                               {form.loading ? "Saving…" : "Add Leave"}
@@ -539,7 +545,7 @@ export default function AdminPage() {
 
         {/* ── SCHEDULES TAB ── */}
         {activeTab === "schedules" && (
-          <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+          <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-[#111] dark:border-[#333]">
             <div className="mb-4">
               <h2 className="text-base font-semibold">Employee Schedules</h2>
               <p className="mt-0.5 text-xs text-slate-400">
@@ -563,7 +569,7 @@ export default function AdminPage() {
                     const saved = savedSchedules.find((s) => s.employeeId === emp.id);
                     const form = schedules[emp.id] ?? { ...makeInitialSchedule(), ...(saved ? { startTime: saved.startTime, endTime: saved.endTime } : {}) };
                     return (
-                      <tr key={emp.id} className="rounded-xl bg-slate-50 align-middle shadow-sm ring-1 ring-slate-200 dark:bg-slate-800/60 dark:ring-slate-700">
+                      <tr key={emp.id} className="rounded-xl bg-slate-50 align-middle shadow-sm ring-1 ring-slate-200 dark:bg-[#1a1a1a]/60 dark:border-[#444]">
                         <td className="px-3 py-3">
                           <div>
                             <span className="font-medium">{emp.fullName}</span>
@@ -578,17 +584,17 @@ export default function AdminPage() {
                         <td className="px-3 py-3">
                           <input type="time" value={form.startTime}
                             onChange={(e) => updateScheduleField(emp.id, "startTime", e.target.value)}
-                            className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-900" />
+                            className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-[#111]" />
                         </td>
                         <td className="px-3 py-3">
                           <input type="time" value={form.endTime}
                             onChange={(e) => updateScheduleField(emp.id, "endTime", e.target.value)}
-                            className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-900" />
+                            className="rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-[#111]" />
                         </td>
                         <td className="px-3 py-3">
                           <div className="flex items-center gap-2">
                             <button disabled={form.loading} onClick={() => handleSaveSchedule(emp.id)}
-                              className="rounded-md bg-navy-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-navy-600 disabled:opacity-60">
+                              className="rounded-md bg-noonan-red px-3 py-1.5 text-xs font-semibold text-white hover:bg-noonan-red-dark disabled:opacity-60">
                               {form.loading ? "…" : "Save"}
                             </button>
                             {form.success && <span className="text-xs text-emerald-600">{form.success}</span>}
@@ -605,7 +611,7 @@ export default function AdminPage() {
         )}
         {/* ── CONTRACTS TAB ── */}
         {activeTab === "contracts" && (
-          <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+          <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-[#111] dark:border-[#333]">
             <div className="mb-4">
               <h2 className="text-base font-semibold">Employee Contract Values</h2>
               <p className="mt-0.5 text-xs text-slate-400">
@@ -627,7 +633,7 @@ export default function AdminPage() {
                   } : {}),
                 };
                 return (
-                  <div key={emp.id} className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200 dark:bg-slate-800/60 dark:ring-slate-700">
+                  <div key={emp.id} className="rounded-xl bg-slate-50 p-4 ring-1 ring-slate-200 dark:bg-[#1a1a1a]/60 dark:border-[#444]">
                     <div className="mb-3 flex items-center gap-2">
                       <span className="font-medium text-sm">{emp.fullName}</span>
                       <span className="text-xs text-slate-400">{emp.id}</span>
@@ -642,35 +648,35 @@ export default function AdminPage() {
                         <label className="mb-1 block text-[11px] font-medium text-slate-400">Contract Value (₱)</label>
                         <input type="number" min={0} step={1000} value={form.contractValue}
                           onChange={(e) => updateContractField(emp.id, "contractValue", e.target.value)}
-                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-900" />
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-[#111]" />
                       </div>
                       <div>
                         <label className="mb-1 block text-[11px] font-medium text-slate-400">Hourly Rate (₱)</label>
                         <input type="number" min={0} step={50} value={form.hourlyRate}
                           onChange={(e) => updateContractField(emp.id, "hourlyRate", e.target.value)}
-                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-900" />
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-[#111]" />
                       </div>
                       <div>
                         <label className="mb-1 block text-[11px] font-medium text-slate-400">Internet Fee (₱)</label>
                         <input type="number" min={0} step={100} value={form.internetFee}
                           onChange={(e) => updateContractField(emp.id, "internetFee", e.target.value)}
-                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-900" />
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-[#111]" />
                       </div>
                       <div>
                         <label className="mb-1 block text-[11px] font-medium text-slate-400">Medical Fee (₱)</label>
                         <input type="number" min={0} step={100} value={form.medicalFee}
                           onChange={(e) => updateContractField(emp.id, "medicalFee", e.target.value)}
-                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-900" />
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-[#111]" />
                       </div>
                       <div>
                         <label className="mb-1 block text-[11px] font-medium text-slate-400">Department</label>
                         <input type="text" value={form.department}
                           onChange={(e) => updateContractField(emp.id, "department", e.target.value)}
-                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-900" />
+                          className="w-full rounded-md border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-[#111]" />
                       </div>
                       <div className="flex items-end gap-2">
                         <button disabled={form.loading} onClick={() => handleSaveContract(emp.id)}
-                          className="rounded-md bg-navy-700 px-3 py-1.5 text-xs font-semibold text-white hover:bg-navy-600 disabled:opacity-60">
+                          className="rounded-md bg-noonan-red px-3 py-1.5 text-xs font-semibold text-white hover:bg-noonan-red-dark disabled:opacity-60">
                           {form.loading ? "…" : "Save"}
                         </button>
                         {form.success && <span className="text-xs text-emerald-600">{form.success}</span>}
@@ -679,7 +685,7 @@ export default function AdminPage() {
                     </div>
                     {form.contractValue && (
                       <p className="mt-2 text-[11px] text-slate-400">
-                        Admin Task Pay per cutoff: <span className="font-mono font-semibold text-navy-700 dark:text-navy-300">
+                        Admin Task Pay per cutoff: <span className="font-mono font-semibold text-noonan-red">
                           ₱{(Number(form.contractValue) / 2).toLocaleString()}
                         </span>
                       </p>
@@ -693,7 +699,7 @@ export default function AdminPage() {
 
         {/* ── EDIT REQUESTS TAB ── */}
         {activeTab === "editRequests" && (
-          <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+          <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-[#111] dark:border-[#333]">
             <div className="mb-4">
               <h2 className="text-base font-semibold">Invoice Edit Requests</h2>
               <p className="mt-0.5 text-xs text-slate-400">
@@ -717,7 +723,7 @@ export default function AdminPage() {
                           ? "bg-amber-50 ring-amber-200 dark:bg-amber-900/20 dark:ring-amber-800"
                           : req.status === "Approved"
                           ? "bg-emerald-50 ring-emerald-200 dark:bg-emerald-900/20 dark:ring-emerald-800"
-                          : "bg-slate-50 ring-slate-200 dark:bg-slate-800/60 dark:ring-slate-700"
+                          : "bg-slate-50 ring-slate-200 dark:bg-[#1a1a1a]/60 dark:border-[#444]"
                       }`}>
                         <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
                           <div>
@@ -773,7 +779,7 @@ export default function AdminPage() {
           <div className="space-y-4">
 
             {/* Manual Punch Override */}
-            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 dark:bg-[#111] dark:border-[#333]">
               <h2 className="mb-1 text-base font-semibold">Manual Punch Override</h2>
               <p className="mb-4 text-xs text-slate-400">Override or add a clock in/out entry for any employee on any date.</p>
               <div className="grid grid-cols-1 gap-3 sm:grid-cols-2 lg:grid-cols-3">
@@ -782,7 +788,7 @@ export default function AdminPage() {
                   <select
                     value={punchEmpId}
                     onChange={(e) => setPunchEmpId(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-black"
                   >
                     <option value="">— Select employee —</option>
                     {employees.map((emp) => (
@@ -796,7 +802,7 @@ export default function AdminPage() {
                     type="date"
                     value={punchDate}
                     onChange={(e) => setPunchDate(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-black"
                   />
                 </div>
                 <div>
@@ -805,7 +811,7 @@ export default function AdminPage() {
                     type="time"
                     value={punchLogin}
                     onChange={(e) => setPunchLogin(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-black"
                   />
                 </div>
                 <div>
@@ -814,14 +820,14 @@ export default function AdminPage() {
                     type="time"
                     value={punchLogout}
                     onChange={(e) => setPunchLogout(e.target.value)}
-                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950"
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-black"
                   />
                 </div>
                 <div className="flex items-end">
                   <button
                     disabled={punchSaving || !punchEmpId || !punchDate || !punchLogin}
                     onClick={handleManualPunch}
-                    className="w-full rounded-lg bg-navy-700 px-4 py-2 text-sm font-semibold text-white hover:bg-navy-600 disabled:opacity-50"
+                    className="w-full rounded-lg bg-noonan-red px-4 py-2 text-sm font-semibold text-white hover:bg-noonan-red-dark disabled:opacity-50"
                   >
                     {punchSaving ? "Saving…" : "Save Entry"}
                   </button>
@@ -835,7 +841,7 @@ export default function AdminPage() {
             </section>
 
             {/* Backfill */}
-            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+            <section className="rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 dark:bg-[#111] dark:border-[#333]">
               <h2 className="mb-1 text-base font-semibold">Backfill Period</h2>
               <p className="mb-4 text-xs text-slate-400">
                 Inserts attendance records for ALL employees for every working day in the range.
@@ -848,7 +854,7 @@ export default function AdminPage() {
                     type="date"
                     value={backfillFrom}
                     onChange={(e) => setBackfillFrom(e.target.value)}
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950"
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-black"
                   />
                 </div>
                 <div>
@@ -857,7 +863,7 @@ export default function AdminPage() {
                     type="date"
                     value={backfillTo}
                     onChange={(e) => setBackfillTo(e.target.value)}
-                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950"
+                    className="rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-black"
                   />
                 </div>
                 <button
@@ -870,7 +876,7 @@ export default function AdminPage() {
               </div>
 
               {backfillResult && (
-                <div className="mt-4 rounded-xl bg-slate-50 p-4 dark:bg-slate-800">
+                <div className="mt-4 rounded-xl bg-slate-50 p-4 dark:bg-[#1a1a1a]">
                   <div className="mb-2 flex gap-4 text-sm">
                     <span className="text-emerald-600 font-semibold">✓ {backfillResult.inserted} entries inserted</span>
                     <span className="text-slate-400">{backfillResult.skipped} skipped (already existed)</span>
@@ -878,7 +884,7 @@ export default function AdminPage() {
                   <p className="mb-1 text-[11px] font-medium text-slate-400 uppercase tracking-wide">Working days in range ({backfillResult.workingDays.length})</p>
                   <div className="flex flex-wrap gap-1.5">
                     {backfillResult.workingDays.map((d) => (
-                      <span key={d} className="rounded-md bg-white px-2 py-0.5 font-mono text-[11px] ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-700">
+                      <span key={d} className="rounded-md bg-white px-2 py-0.5 font-mono text-[11px] ring-1 ring-slate-200 dark:bg-[#111] dark:border-[#444]">
                         {d}
                       </span>
                     ))}

@@ -14,7 +14,6 @@ export async function POST(req: Request) {
   }
 
   const body = await req.json() as {
-    recepTaskPay: number;
     hoursClaimed: number;
     notes: string;
   };
@@ -25,7 +24,7 @@ export async function POST(req: Request) {
     employeeId: user.employeeId,
     periodFrom: cutoff.from,
     periodTo: cutoff.to,
-    recepTaskPay: Number(body.recepTaskPay) || 0,
+    recepTaskPay: 0,
     hoursClaimed: Number(body.hoursClaimed) || 0,
     notes: body.notes ?? "",
     status: "Pending",

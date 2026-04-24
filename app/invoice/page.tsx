@@ -49,12 +49,10 @@ export default function InvoicePage() {
   const [loading, setLoading] = useState(true);
   const [saving, setSaving] = useState(false);
   const [submitting, setSubmitting] = useState(false);
-  const [downloading, setDownloading] = useState(false);
   const [message, setMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   // Edit state
   const [leaveDays, setLeaveDays] = useState("0");
-  const [recepPay, setRecepPay] = useState("0");
   const [hoursClaimed, setHoursClaimed] = useState("0");
   const [notes, setNotes] = useState("");
   const [editMode, setEditMode] = useState(false);
@@ -75,7 +73,6 @@ export default function InvoicePage() {
       const json = await res.json() as InvoiceResponse;
       setData(json);
       setLeaveDays(String(json.payslip.leaveDaysTaken ?? 0));
-      setRecepPay(String(json.payslip.recepTaskPay ?? 0));
       setHoursClaimed(String(json.payslip.hoursClaimed ?? 0));
       setNotes(json.payslip.notes ?? "");
     }
@@ -93,13 +90,12 @@ export default function InvoicePage() {
   function getPreviewPayslip(): PayslipData | null {
     if (!data?.payslip) return null;
     const p = data.payslip;
-    const recep = Number(recepPay) || 0;
     const claimed = Number(hoursClaimed) || 0;
     const leavD = Number(leaveDays) || 0;
     const leaveDeductions = leavD * p.hourlyRate * 7.5;
-    const totalEarnings = p.adminTaskPay + recep + p.internetFee + p.medicalFee - leaveDeductions;
+    const totalEarnings = p.recepTaskPay + p.internetFee + p.medicalFee - leaveDeductions - p.attendanceDeductions + p.overtimePay;
     const timeBankBalance = Math.round((p.timeBankTotal - claimed) * 100) / 100;
-    return { ...p, recepTaskPay: recep, hoursClaimed: claimed, leaveDaysTaken: leavD, leaveDeductions, totalEarnings, timeBankBalance, notes };
+    return { ...p, hoursClaimed: claimed, leaveDaysTaken: leavD, leaveDeductions, totalEarnings, timeBankBalance, notes };
   }
 
   async function handleFinalize() {
@@ -130,7 +126,6 @@ export default function InvoicePage() {
       method: "POST",
       headers: { "Content-Type": "application/json" },
       body: JSON.stringify({
-        recepTaskPay: Number(recepPay) || 0,
         hoursClaimed: Number(hoursClaimed) || 0,
         notes,
       }),
@@ -145,34 +140,8 @@ export default function InvoicePage() {
     }
   }
 
-  async function handleDownloadPdf() {
-    const preview = getPreviewPayslip();
-    if (!preview) return;
-    setDownloading(true);
-    setMessage(null);
-    try {
-      const res = await fetch("/api/invoice/pdf", {
-        method: "POST",
-        headers: { "Content-Type": "application/json" },
-        body: JSON.stringify(preview),
-      });
-      if (!res.ok) {
-        setMessage({ type: "error", text: "PDF generation failed." });
-        setDownloading(false);
-        return;
-      }
-      const blob = await res.blob();
-      const url = URL.createObjectURL(blob);
-      const a = document.createElement("a");
-      a.href = url;
-      a.download = `invoice-${preview.invoiceNo}-${preview.employeeName.replace(/\s+/g, "_")}.pdf`;
-      a.click();
-      URL.revokeObjectURL(url);
-    } catch (e) {
-      setMessage({ type: "error", text: "PDF generation failed." });
-      console.error(e);
-    }
-    setDownloading(false);
+  function handleDownloadPdf() {
+    window.print();
   }
 
   if (status === "loading" || loading) {
@@ -199,7 +168,7 @@ export default function InvoicePage() {
       <div className="mx-auto max-w-3xl px-4 py-8">
 
         {/* Nav */}
-        <div className="mb-6 flex flex-wrap items-center justify-between gap-3">
+        <div className="print:hidden mb-6 flex flex-wrap items-center justify-between gap-3">
           <button
             onClick={() => router.push(isAdmin ? "/" : "/dashboard")}
             className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
@@ -234,7 +203,7 @@ export default function InvoicePage() {
           <>
             {/* Member edit request status banner */}
             {isMember && editRequest && (
-              <div className={`mb-4 rounded-2xl px-5 py-4 ring-1 ${
+              <div className={`print:hidden mb-4 rounded-2xl px-5 py-4 ring-1 ${
                 editStatus === "Approved"
                   ? "bg-emerald-50 ring-emerald-200 dark:bg-emerald-900/20 dark:ring-emerald-800"
                   : editStatus === "Rejected"
@@ -270,21 +239,26 @@ export default function InvoicePage() {
 
             {/* Member edit form */}
             {canMemberEdit && memberCanSubmit && (
-              <div className="mb-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+              <div className="print:hidden mb-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
                 <h3 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">
                   Edit Invoice Fields
                   <span className="ml-2 text-xs font-normal text-slate-400">— submit for admin approval to unlock download</span>
                 </h3>
                 <div className="grid grid-cols-1 gap-4 sm:grid-cols-2">
                   <div>
-                    <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Recep Task Pay (₱)</label>
-                    <input type="number" min={0} step={100} value={recepPay} onChange={(e) => setRecepPay(e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950" />
-                  </div>
-                  <div>
-                    <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Hours Claimed (time bank)</label>
-                    <input type="number" min={0} step={0.5} value={hoursClaimed} onChange={(e) => setHoursClaimed(e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950" />
+                    <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">
+                      Time Bank Hours to Redeem
+                      {data?.payslip && (
+                        <span className="ml-1 font-normal text-slate-400">(max: {data.payslip.timeBankTotal})</span>
+                      )}
+                    </label>
+                    <input
+                      type="number" min={0} step={0.5}
+                      max={data?.payslip?.timeBankTotal ?? undefined}
+                      value={hoursClaimed}
+                      onChange={(e) => setHoursClaimed(e.target.value)}
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950"
+                    />
                   </div>
                   <div className="sm:col-span-2">
                     <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Notes</label>
@@ -309,28 +283,28 @@ export default function InvoicePage() {
 
             {/* Pending — locked edit notice */}
             {isMember && editStatus === "Pending" && (
-              <div className="mb-4 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700">
+              <div className="print:hidden mb-4 rounded-2xl bg-slate-50 p-4 ring-1 ring-slate-200 dark:bg-slate-800 dark:ring-slate-700">
                 <p className="text-xs text-slate-500 dark:text-slate-400">
                   Your edit request is pending review. You cannot modify it until Sheehan approves or rejects it.
                 </p>
                 <div className="mt-2 grid grid-cols-2 gap-2 text-xs sm:grid-cols-3">
-                  <div><span className="text-slate-400">Recep Pay:</span> <span className="font-mono font-medium">{formatPeso(editRequest?.recepTaskPay ?? 0)}</span></div>
-                  <div><span className="text-slate-400">Hours Claimed:</span> <span className="font-mono font-medium">{editRequest?.hoursClaimed ?? 0}</span></div>
+                  <div><span className="text-slate-400">Time Bank Redeem:</span> <span className="font-mono font-medium">{editRequest?.hoursClaimed ?? 0} hrs</span></div>
                   {editRequest?.notes && <div className="col-span-2 sm:col-span-1"><span className="text-slate-400">Notes:</span> <span className="font-medium">{editRequest.notes}</span></div>}
                 </div>
               </div>
             )}
 
             {/* Invoice document */}
-            <div className="overflow-hidden rounded-2xl bg-white shadow-xl dark:bg-slate-900">
-              {/* Header banner */}
-              <div className="flex items-center justify-between bg-navy-700 px-6 py-4">
+            <div className="overflow-hidden rounded-2xl shadow-xl" style={{ background: "#fef6e4" }}>
+
+              {/* Header: logo left, invoice meta right — cream bg with red bottom border */}
+              <div className="flex items-start justify-between px-6 py-5 border-b-4 border-noonan-red" style={{ background: "#fef6e4" }}>
                 <div>
-                  <p className="text-[11px] uppercase tracking-widest text-navy-200">Noonan</p>
-                  <p className="text-lg font-bold text-white">Service Provider Invoice</p>
+                  <img src="/noonan-logo-red.svg" alt="Noonan Real Estate Agency" className="h-14 w-auto" />
+                  <p className="mt-2 text-[10px] font-semibold uppercase tracking-[3px] text-noonan-gray">Service Provider Invoice</p>
                 </div>
-                <div className="text-right text-xs text-navy-200">
-                  <p className="font-mono">Service Invoice no. {p.invoiceNo}</p>
+                <div className="text-right text-xs text-noonan-gray mt-1 space-y-0.5">
+                  <p className="font-mono text-sm font-bold text-noonan-red">Service Invoice no. {p.invoiceNo}</p>
                   <p>Date: {formatDateLong(p.invoiceDate)}</p>
                   <p>Service Provider Code: {p.serviceProviderCode}</p>
                 </div>
@@ -338,126 +312,138 @@ export default function InvoicePage() {
 
               <div className="p-6 space-y-0">
                 {/* Info grid */}
-                <div className="border border-slate-200 dark:border-slate-700">
-                  <div className="grid grid-cols-2 border-b border-slate-200 dark:border-slate-700">
-                    <div className="border-r border-slate-200 px-4 py-2 text-xs dark:border-slate-700">
-                      <span className="text-slate-500">Service Start Date:</span>{" "}
-                      <span className="font-medium">{toDisplayDate(p.hireDate)}</span>
+                <div className="border border-noonan-gray/30">
+                  <div className="grid grid-cols-2 border-b border-noonan-gray/30">
+                    <div className="border-r border-noonan-gray/30 px-4 py-2 text-xs">
+                      <span className="text-noonan-gray">Service Start Date:</span>{" "}
+                      <span className="font-semibold text-slate-800">{toDisplayDate(p.hireDate)}</span>
                     </div>
                     <div className="px-4 py-2 text-xs" />
                   </div>
-                  <div className="grid grid-cols-2 border-b border-slate-200 dark:border-slate-700">
-                    <div className="border-r border-slate-200 px-4 py-2 space-y-1 dark:border-slate-700">
-                      <div className="text-xs"><span className="text-slate-500">Payment Period:</span>{" "}<span className="font-semibold">{p.cutoff.label}</span></div>
-                      <div className="text-xs"><span className="text-slate-500">Payment Due Date:</span>{" "}<span className="font-medium">{toDisplayDate(p.cutoff.dueDate)}</span></div>
-                      <div className="text-xs"><span className="text-slate-500">Hours Rendered:</span>{" "}<span className="font-medium">{p.hoursRendered} hours</span></div>
-                      <div className="text-xs"><span className="text-slate-500">Hours Awarded for cut off:</span>{" "}<span className="font-medium">{p.hoursAwarded} hours</span></div>
+                  <div className="grid grid-cols-2">
+                    <div className="border-r border-noonan-gray/30 px-4 py-2 space-y-1">
+                      <div className="text-xs"><span className="text-noonan-gray">Payment Period:</span>{" "}<span className="font-semibold text-slate-800">{p.cutoff.label}</span></div>
+                      <div className="text-xs"><span className="text-noonan-gray">Payment Due Date:</span>{" "}<span className="font-medium text-slate-800">{toDisplayDate(p.cutoff.dueDate)}</span></div>
+                      <div className="text-xs"><span className="text-noonan-gray">Hours Rendered:</span>{" "}<span className="font-medium text-slate-800">{p.hoursRendered} hours</span></div>
+                      <div className="text-xs"><span className="text-noonan-gray">Hours Awarded for cut off:</span>{" "}<span className="font-medium text-slate-800">{p.hoursAwarded} hours</span></div>
                     </div>
                     <div className="px-4 py-2 space-y-1">
-                      <div className="text-xs"><span className="text-slate-500">Service Provider:</span>{" "}<span className="font-semibold">{p.employeeName}</span></div>
-                      <div className="text-xs"><span className="text-slate-500">Designation of Task:</span>{" "}<span className="font-medium">{p.position}</span></div>
-                      <div className="text-xs"><span className="text-slate-500">Contract Value:</span>{" "}<span className="font-medium">{formatPeso(p.contractValue)}</span></div>
-                      <div className="text-xs"><span className="text-slate-500">Department Assisted:</span>{" "}<span className="font-medium">{p.department}</span></div>
+                      <div className="text-xs"><span className="text-noonan-gray">Service Provider:</span>{" "}<span className="font-semibold text-slate-800">{p.employeeName}</span></div>
+                      <div className="text-xs"><span className="text-noonan-gray">Designation of Task:</span>{" "}<span className="font-medium text-slate-800">{p.position}</span></div>
+                      <div className="text-xs"><span className="text-noonan-gray">Contract Value:</span>{" "}<span className="font-medium text-slate-800">{formatPeso(p.contractValue)}</span></div>
+                      <div className="text-xs"><span className="text-noonan-gray">Department Assisted:</span>{" "}<span className="font-medium text-slate-800">{p.department}</span></div>
                     </div>
                   </div>
                 </div>
 
                 {/* Earnings table */}
-                <table className="w-full border border-t-0 border-slate-200 text-xs dark:border-slate-700">
+                <table className="w-full border border-t-0 border-noonan-gray/30 text-xs">
                   <thead>
-                    <tr className="bg-slate-100 text-left dark:bg-slate-800">
-                      <th className="px-3 py-2 font-semibold w-1/3">Earnings</th>
-                      <th className="px-3 py-2 font-semibold">Notes</th>
-                      <th className="px-3 py-2 font-semibold text-right">Hours</th>
-                      <th className="px-3 py-2 font-semibold text-right">Rate</th>
-                      <th className="px-3 py-2 font-semibold text-right">Amount</th>
+                    <tr className="text-left" style={{ background: "#c42032" }}>
+                      <th className="px-3 py-2 font-semibold text-white w-1/3">Earnings</th>
+                      <th className="px-3 py-2 font-semibold text-white">Notes</th>
+                      <th className="px-3 py-2 font-semibold text-white text-right">Hours</th>
+                      <th className="px-3 py-2 font-semibold text-white text-right">Rate</th>
+                      <th className="px-3 py-2 font-semibold text-white text-right">Amount</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  <tbody className="divide-y divide-noonan-gray/20">
                     <tr>
-                      <td className="px-3 py-2">Admin Task Pay:</td>
-                      <td className="px-3 py-2 text-slate-400 text-[11px]">½ of contract value</td>
-                      <td className="px-3 py-2 text-right font-mono">{p.hoursAwarded}</td>
-                      <td className="px-3 py-2 text-right font-mono">{formatPeso(p.hourlyRate)}</td>
-                      <td className="px-3 py-2 text-right font-mono font-semibold">{formatPeso(p.adminTaskPay)}</td>
+                      <td className="px-3 py-2 text-slate-800">Recep Task</td>
+                      <td className="px-3 py-2 text-noonan-gray text-[11px]">½ of contract value</td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-800">{p.hoursAwarded}</td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-800">{formatPeso(p.hourlyRate)}</td>
+                      <td className="px-3 py-2 text-right font-mono font-semibold text-slate-800">{formatPeso(p.recepTaskPay)}</td>
                     </tr>
                     <tr>
-                      <td className="px-3 py-2 text-slate-400">Recep Task</td>
-                      <td className="px-3 py-2" /><td className="px-3 py-2" /><td className="px-3 py-2" />
-                      <td className="px-3 py-2 text-right font-mono">{formatPeso(p.recepTaskPay)}</td>
-                    </tr>
-                    <tr>
-                      <td className="px-3 py-2">Other Contract Clause</td>
-                      <td className="px-3 py-2 text-slate-500">Internet fee</td>
+                      <td className="px-3 py-2 text-slate-800">Other Contract Clause</td>
+                      <td className="px-3 py-2 text-noonan-gray">Internet fee</td>
                       <td className="px-3 py-2" /><td className="px-3 py-2" />
-                      <td className="px-3 py-2 text-right font-mono">{formatPeso(p.internetFee)}</td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-800">{formatPeso(p.internetFee)}</td>
                     </tr>
                     <tr>
-                      <td className="px-3 py-2">Other Contract Clause</td>
-                      <td className="px-3 py-2 text-slate-500">Medical Fee</td>
+                      <td className="px-3 py-2 text-slate-800">Other Contract Clause</td>
+                      <td className="px-3 py-2 text-noonan-gray">Medical Fee</td>
                       <td className="px-3 py-2" /><td className="px-3 py-2" />
-                      <td className="px-3 py-2 text-right font-mono">{formatPeso(p.medicalFee)}</td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-800">{formatPeso(p.medicalFee)}</td>
                     </tr>
-                    {p.leaveDeductions > 0 && (
-                      <tr className="bg-amber-50 dark:bg-amber-900/20">
-                        <td className="px-3 py-2 text-amber-700 dark:text-amber-300">Leave Deduction</td>
-                        <td className="px-3 py-2 text-amber-600 dark:text-amber-400">{p.leaveDaysTaken}d taken</td>
-                        <td className="px-3 py-2" /><td className="px-3 py-2" />
-                        <td className="px-3 py-2 text-right font-mono text-amber-700 dark:text-amber-300">-{formatPeso(p.leaveDeductions)}</td>
+                    {p.overtimePay > 0 && (
+                      <tr className="bg-emerald-50">
+                        <td className="px-3 py-2 text-emerald-700">Overtime Pay</td>
+                        <td className="px-3 py-2 text-emerald-600 text-[11px]">{p.otHours}h approved OT</td>
+                        <td className="px-3 py-2 text-right font-mono text-emerald-700">{p.otHours}</td>
+                        <td className="px-3 py-2 text-right font-mono text-emerald-700">{formatPeso(p.hourlyRate)}</td>
+                        <td className="px-3 py-2 text-right font-mono font-semibold text-emerald-700">+{formatPeso(p.overtimePay)}</td>
                       </tr>
                     )}
-                    <tr className="bg-slate-100 font-bold dark:bg-slate-800">
-                      <td className="px-3 py-2">Total Earnings:</td>
+                    {p.leaveDeductions > 0 && (
+                      <tr className="bg-amber-50">
+                        <td className="px-3 py-2 text-amber-700">Leave Deduction</td>
+                        <td className="px-3 py-2 text-amber-600">{p.leaveDaysTaken}d taken</td>
+                        <td className="px-3 py-2" /><td className="px-3 py-2" />
+                        <td className="px-3 py-2 text-right font-mono text-amber-700">-{formatPeso(p.leaveDeductions)}</td>
+                      </tr>
+                    )}
+                    {p.attendanceDeductions > 0 && (
+                      <tr className="bg-rose-50">
+                        <td className="px-3 py-2 text-rose-700">Attendance Deduction</td>
+                        <td className="px-3 py-2 text-rose-500 text-[11px]">{p.lateEarlyMinutes} min late/early</td>
+                        <td className="px-3 py-2" /><td className="px-3 py-2" />
+                        <td className="px-3 py-2 text-right font-mono text-rose-700">-{formatPeso(p.attendanceDeductions)}</td>
+                      </tr>
+                    )}
+                    <tr className="font-bold" style={{ background: "rgba(196,32,50,0.08)" }}>
+                      <td className="px-3 py-2 text-slate-800">Total Earnings:</td>
                       <td className="px-3 py-2" /><td className="px-3 py-2" /><td className="px-3 py-2" />
-                      <td className="px-3 py-2 text-right font-mono text-navy-700 dark:text-navy-300">{formatPeso(p.totalEarnings)}</td>
+                      <td className="px-3 py-2 text-right font-mono text-noonan-red">{formatPeso(p.totalEarnings)}</td>
                     </tr>
                   </tbody>
                 </table>
 
                 {/* Time bank */}
-                <table className="w-full border border-t-0 border-slate-200 text-xs dark:border-slate-700">
+                <table className="w-full border border-t-0 border-noonan-gray/30 text-xs">
                   <thead>
-                    <tr className="bg-slate-100 text-left dark:bg-slate-800">
-                      <th className="px-3 py-2 font-semibold w-1/2" />
-                      <th className="px-3 py-2 font-semibold text-right">Contract Duration</th>
-                      <th className="px-3 py-2 font-semibold text-right">Monthly</th>
-                      <th className="px-3 py-2 font-semibold text-right">Total running balance</th>
+                    <tr className="text-left" style={{ background: "#595959" }}>
+                      <th className="px-3 py-2 font-semibold text-white w-1/2" />
+                      <th className="px-3 py-2 font-semibold text-white text-right">Contract Duration</th>
+                      <th className="px-3 py-2 font-semibold text-white text-right">Monthly</th>
+                      <th className="px-3 py-2 font-semibold text-white text-right">Total running balance</th>
                     </tr>
                   </thead>
-                  <tbody className="divide-y divide-slate-100 dark:divide-slate-800">
+                  <tbody className="divide-y divide-noonan-gray/20">
                     <tr>
-                      <td className="px-3 py-2">Time incentive award for Service Provider</td>
-                      <td className="px-3 py-2 text-right font-mono">{p.contractDurationMonths}</td>
-                      <td className="px-3 py-2 text-right font-mono">{p.timeBankPerMonth}</td>
-                      <td className="px-3 py-2 text-right font-mono">{p.timeBankTotal}</td>
+                      <td className="px-3 py-2 text-slate-800">Time incentive award for Service Provider</td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-800">{p.contractDurationMonths}</td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-800">{p.timeBankPerMonth}</td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-800">{p.timeBankTotal}</td>
                     </tr>
                     <tr>
-                      <td className="px-3 py-2 text-slate-500">Hours Claimed</td>
+                      <td className="px-3 py-2 text-noonan-gray">Hours Claimed</td>
                       <td className="px-3 py-2" /><td className="px-3 py-2" />
-                      <td className="px-3 py-2 text-right font-mono">{p.hoursClaimed}</td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-800">{p.hoursClaimed}</td>
                     </tr>
-                    <tr className="font-semibold">
-                      <td className="px-3 py-2">Time Bank Balance:</td>
+                    <tr className="font-semibold" style={{ background: "rgba(196,32,50,0.08)" }}>
+                      <td className="px-3 py-2 text-slate-800">Time Bank Balance:</td>
                       <td className="px-3 py-2" /><td className="px-3 py-2" />
-                      <td className="px-3 py-2 text-right font-mono text-navy-700 dark:text-navy-300">{p.timeBankBalance}</td>
+                      <td className="px-3 py-2 text-right font-mono text-noonan-red">{p.timeBankBalance}</td>
                     </tr>
                   </tbody>
                 </table>
 
                 {/* Footer note */}
-                <div className="border border-t-0 border-slate-200 px-4 py-3 dark:border-slate-700">
-                  <p className="text-[10px] italic text-slate-500">
+                <div className="border border-t-0 border-noonan-gray/30 px-4 py-3">
+                  <p className="text-[10px] italic text-noonan-gray">
                     Note: Time incentive award is redeemable within the year as productivity promotion.
                   </p>
-                  {p.notes && <p className="mt-1 text-[10px] text-slate-500">{p.notes}</p>}
+                  {p.notes && <p className="mt-1 text-[10px] text-noonan-gray">{p.notes}</p>}
                 </div>
               </div>
 
               {/* Status bar */}
-              <div className={`flex items-center gap-2 px-6 py-3 text-xs font-medium ${
+              <div className={`print:hidden flex items-center gap-2 px-6 py-3 text-xs font-medium ${
                 data?.isFinalized
-                  ? "bg-emerald-50 text-emerald-700 dark:bg-emerald-900/20 dark:text-emerald-300"
-                  : "bg-amber-50 text-amber-700 dark:bg-amber-900/20 dark:text-amber-300"
+                  ? "bg-emerald-50 text-emerald-700"
+                  : "bg-amber-50 text-amber-700"
               }`}>
                 <div className={`h-2 w-2 rounded-full ${data?.isFinalized ? "bg-emerald-500" : "bg-amber-500"}`} />
                 {data?.isFinalized
@@ -466,34 +452,34 @@ export default function InvoicePage() {
               </div>
             </div>
 
-            {/* Download PDF button */}
-            <div className="mt-4 flex items-center justify-end gap-3">
+            {/* Print button */}
+            <div className="print:hidden mt-4 flex items-center justify-end gap-3">
               {isMember && !memberCanDownload && (
                 <p className="text-xs text-slate-400">
                   {editStatus === "Pending"
-                    ? "Download unlocks after admin approval."
-                    : "Submit your edits above for admin approval to download."}
+                    ? "Print unlocks after admin approval."
+                    : "Submit your edits above for admin approval to print."}
                 </p>
               )}
               <button
                 onClick={handleDownloadPdf}
-                disabled={downloading || !memberCanDownload}
+                disabled={!memberCanDownload}
                 className="flex items-center gap-2 rounded-lg bg-navy-700 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-navy-600 disabled:cursor-not-allowed disabled:opacity-40"
               >
-                {downloading ? "Generating…" : "⬇ Download PDF"}
+                🖨 Print / Save as PDF
               </button>
             </div>
 
             {/* Member message */}
             {message && (
-              <p className={`mt-3 text-xs text-center ${message.type === "success" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-500"}`}>
+              <p className={`print:hidden mt-3 text-xs text-center ${message.type === "success" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-500"}`}>
                 {message.text}
               </p>
             )}
 
             {/* Admin controls */}
             {isAdmin && (
-              <div className="mt-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+              <div className="print:hidden mt-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
                 <h3 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">Admin Controls</h3>
 
                 {!data?.isFinalized && (

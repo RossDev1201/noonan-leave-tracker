@@ -5,7 +5,9 @@
       "Bash(npm install *)",
       "Bash(npx tsc *)",
       "Bash(grep -oP 'process\\\\.env\\\\.\\\\w+|process\\\\.env\\\\[`[^`]+`\\\\]')",
-      "Bash(grep -roh 'process\\\\.env\\\\[`[^`]*`\\\\]' --include=\"*.ts\" --include=\"*.tsx\")"
+      "Bash(grep -roh 'process\\\\.env\\\\[`[^`]*`\\\\]' --include=\"*.ts\" --include=\"*.tsx\")",
+      "Bash(cp \"D:/Noonan/Updated Logo/NREA_logo_white.svg\" \"D:/Leave Tracker/noonan-leave-tracker/public/noonan-logo-white.svg\")",
+      "Bash(cp \"D:/Noonan/Updated Logo/NREA_logo_red.svg\" \"D:/Leave Tracker/noonan-leave-tracker/public/noonan-logo-red.svg\")"
     ]
   }
 }

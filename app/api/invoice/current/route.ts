@@ -7,6 +7,7 @@ import {
   fetchEmployeesFromSheet,
   getContractConfigForEmployee,
   getEditRequestForPeriod,
+  getScheduleForEmployee,
 } from "@/lib/googleSheets";
 import { getCurrentCutoff } from "@/lib/cutoff";
 import { buildPayslipData } from "@/lib/payslip";
@@ -30,12 +31,13 @@ export async function GET(req: Request) {
   if (!employeeId) return NextResponse.json({ error: "employeeId required" }, { status: 400 });
 
   const cutoff = getCurrentCutoff();
-  const [employees, entries, saved, contractConfig, editRequest] = await Promise.all([
+  const [employees, entries, saved, contractConfig, editRequest, schedule] = await Promise.all([
     fetchEmployeesFromSheet(),
     getTimeEntriesForEmployee(employeeId),
     getPayslipForCutoff(employeeId, cutoff),
     getContractConfigForEmployee(employeeId),
     getEditRequestForPeriod(employeeId, cutoff.from, cutoff.to),
+    getScheduleForEmployee(employeeId),
   ]);
 
   const emp = employees.find((e) => e.id === employeeId);
@@ -51,12 +53,12 @@ export async function GET(req: Request) {
       payslip: buildPayslipData(emp.id, emp.fullName, emp.position, emp.hireDate, entries, cutoff, {
         leaveDaysTaken: saved.leaveDaysTaken,
         hoursClaimed: approvedEdit?.hoursClaimed ?? 0,
-        recepTaskPay: approvedEdit?.recepTaskPay ?? 0,
         notes: approvedEdit?.notes ?? saved.notes,
         payslipId: saved.payslipId,
         savedAt: saved.savedAt,
         isFinalized: true,
         contractConfig: config,
+        schedule,
       }),
       isFinalized: true,
       savedAt: saved.savedAt,
@@ -66,9 +68,9 @@ export async function GET(req: Request) {
 
   const payslip = buildPayslipData(emp.id, emp.fullName, emp.position, emp.hireDate, entries, cutoff, {
     hoursClaimed: approvedEdit?.hoursClaimed ?? 0,
-    recepTaskPay: approvedEdit?.recepTaskPay ?? 0,
     notes: approvedEdit?.notes,
     contractConfig: config,
+    schedule,
   });
   return NextResponse.json({ payslip, isFinalized: false, editRequest: editRequest ?? null });
 }

@@ -162,7 +162,7 @@ export default function DashboardPage() {
 
   if (status === "loading" || !clockStatus) {
     return (
-      <div className="flex min-h-screen items-center justify-center bg-slate-50 dark:bg-slate-950">
+      <div className="flex min-h-screen items-center justify-center bg-noonan-cream dark:bg-black">
         <div className="text-sm text-slate-400">Loading…</div>
       </div>
     );
@@ -175,13 +175,17 @@ export default function DashboardPage() {
         {/* Header */}
         <header className="mb-6 flex items-center justify-between">
           <div>
-            <h1 className="text-xl font-bold text-navy-700 dark:text-navy-300">Noonan Tracker</h1>
+            <h1 className="text-xl font-bold text-noonan-red">Noonan Tracker</h1>
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <ThemeToggle />
             <button onClick={() => router.push("/history")}
-              className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
+              className="rounded-lg border border-noonan-lightgray bg-white px-3 py-1.5 text-xs font-medium text-noonan-gray hover:border-noonan-red hover:text-noonan-red dark:border-[#333] dark:bg-[#111] dark:text-noonan-cream">
               History
+            </button>
+            <button onClick={() => router.push("/help")}
+              className="rounded-lg border border-noonan-lightgray bg-white px-3 py-1.5 text-xs font-medium text-noonan-gray hover:border-noonan-red hover:text-noonan-red dark:border-[#333] dark:bg-[#111] dark:text-noonan-cream">
+              Help
             </button>
             <button onClick={() => signOut({ callbackUrl: "/login" })}
               className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-500 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-400 dark:hover:bg-slate-700">
@@ -192,7 +196,7 @@ export default function DashboardPage() {
 
         {/* ── Persistent welcome / goodbye banner ── */}
         {clockStatus.status === "clocked_in" && clockStatus.loginTime && (
-          <div className="mb-4 rounded-2xl bg-navy-700 px-6 py-5 text-center shadow-md">
+          <div className="mb-4 rounded-2xl bg-noonan-red px-6 py-5 text-center shadow-md">
             <p className="text-xs font-semibold uppercase tracking-widest text-navy-200">Good day!</p>
             <h2 className="mt-1 text-xl font-bold text-white">Welcome, {name}!</h2>
             <p className="mt-1 text-sm text-navy-200">
@@ -243,14 +247,14 @@ export default function DashboardPage() {
         <p className="mb-4 font-mono text-xs text-slate-400">{today}</p>
 
         {/* Clock card */}
-        <section className="mb-4 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+        <section className="mb-4 rounded-2xl border border-noonan-lightgray bg-white p-6 dark:border-[#333] dark:bg-[#111]">
           <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-400">
             Today&apos;s Attendance
           </h2>
 
           {/* Scheduled hours */}
           {clockStatus.schedule && (
-            <div className="mb-3 flex items-center gap-2 rounded-lg bg-slate-50 px-3 py-2 text-xs ring-1 ring-slate-100 dark:bg-slate-800 dark:ring-slate-700">
+            <div className="mb-3 flex items-center gap-2 rounded-lg border border-noonan-lightgray bg-noonan-cream px-3 py-2 text-xs dark:border-[#333] dark:bg-[#1a1a1a]">
               <span className="text-slate-500">Schedule:</span>
               <span className="font-mono font-semibold text-slate-700 dark:text-slate-300">
                 {clockStatus.schedule.startTime} – {clockStatus.schedule.endTime}
@@ -261,9 +265,9 @@ export default function DashboardPage() {
 
           {/* Times display */}
           <div className="mb-4 grid grid-cols-2 gap-3">
-            <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
+            <div className="border border-noonan-lightgray bg-noonan-cream p-3 dark:border-[#333] dark:bg-[#1a1a1a]">
               <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Clock In</span>
-              <span className="mt-1 block font-mono text-lg font-bold text-slate-900 dark:text-slate-100">
+              <span className="mt-1 block font-mono text-lg font-bold text-black dark:text-noonan-cream">
                 {clockStatus.loginTime ?? "—"}
               </span>
               {clockStatus.attendanceStatus && clockStatus.attendanceStatus !== "no_schedule" && (
@@ -275,9 +279,9 @@ export default function DashboardPage() {
                 </div>
               )}
             </div>
-            <div className="rounded-xl bg-slate-50 p-3 dark:bg-slate-800">
+            <div className="border border-noonan-lightgray bg-noonan-cream p-3 dark:border-[#333] dark:bg-[#1a1a1a]">
               <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Clock Out</span>
-              <span className="mt-1 block font-mono text-lg font-bold text-slate-900 dark:text-slate-100">
+              <span className="mt-1 block font-mono text-lg font-bold text-black dark:text-noonan-cream">
                 {clockStatus.logoutTime ?? "—"}
               </span>
               {clockStatus.departureStatus && clockStatus.departureStatus !== "no_schedule" && (
@@ -312,7 +316,7 @@ export default function DashboardPage() {
           <div className="flex gap-3">
             {clockStatus.status === "not_clocked_in" && (
               <button onClick={handleClockIn} disabled={actionLoading}
-                className="flex-1 rounded-lg bg-navy-700 py-3 text-sm font-semibold text-white transition hover:bg-navy-600 disabled:opacity-50">
+                className="flex-1 rounded-lg bg-noonan-red py-3 text-sm font-semibold text-white transition hover:bg-noonan-red-dark disabled:opacity-50">
                 {actionLoading ? "Clocking in…" : "Clock In"}
               </button>
             )}
@@ -323,7 +327,7 @@ export default function DashboardPage() {
               </button>
             )}
             {clockStatus.status === "clocked_out" && (
-              <div className="flex-1 rounded-lg bg-slate-100 py-3 text-center text-sm font-semibold text-slate-500 dark:bg-slate-800 dark:text-slate-400">
+              <div className="flex-1 border border-noonan-lightgray bg-noonan-lightgray py-3 text-center text-sm font-semibold text-noonan-gray dark:border-[#333] dark:bg-[#1a1a1a] dark:text-noonan-warmgray">
                 Shift complete for today
               </div>
             )}
@@ -331,14 +335,14 @@ export default function DashboardPage() {
         </section>
 
         {/* Current period + invoice */}
-        <section className="rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+        <section className="rounded-2xl border border-noonan-lightgray bg-white p-6 dark:border-[#333] dark:bg-[#111]">
           <h2 className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">Current Period</h2>
           {summary ? (
             <>
               <p className="mb-4 text-xs text-slate-400">{summary.periodFrom} → {summary.periodTo}</p>
               <div className="grid grid-cols-2 gap-3">
                 <div className="rounded-xl bg-slate-50 p-3 text-center dark:bg-slate-800">
-                  <span className="block text-2xl font-bold text-navy-700 dark:text-navy-300">{summary.daysWorked}</span>
+                  <span className="block text-2xl font-bold text-noonan-red">{summary.daysWorked}</span>
                   <span className="text-xs text-slate-400">Days worked</span>
                 </div>
                 <div className="rounded-xl bg-slate-50 p-3 text-center dark:bg-slate-800">
@@ -352,14 +356,14 @@ export default function DashboardPage() {
           )}
           <button
             onClick={() => router.push("/invoice")}
-            className="mt-4 w-full rounded-lg bg-navy-700 py-2.5 text-sm font-semibold text-white hover:bg-navy-600"
+            className="mt-4 w-full rounded-lg bg-noonan-red py-2.5 text-sm font-semibold text-white hover:bg-noonan-red-dark"
           >
             View &amp; Edit Invoice →
           </button>
         </section>
 
         {/* Leave Request */}
-        <section className="mt-4 rounded-2xl bg-white p-6 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+        <section className="mt-4 rounded-2xl border border-noonan-lightgray bg-white p-6 dark:border-[#333] dark:bg-[#111]">
           <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-400">
             Request Leave
           </h2>
@@ -372,7 +376,7 @@ export default function DashboardPage() {
                   required
                   value={leaveForm.leaveDate}
                   onChange={(e) => setLeaveForm((f) => ({ ...f, leaveDate: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-slate-950"
                 />
               </div>
               <div>
@@ -384,7 +388,7 @@ export default function DashboardPage() {
                   required
                   value={leaveForm.days}
                   onChange={(e) => setLeaveForm((f) => ({ ...f, days: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950"
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-slate-950"
                 />
               </div>
             </div>
@@ -393,7 +397,7 @@ export default function DashboardPage() {
               <select
                 value={leaveForm.type}
                 onChange={(e) => setLeaveForm((f) => ({ ...f, type: e.target.value }))}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950"
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-slate-950"
               >
                 <option>Annual</option>
                 <option>Sick</option>
@@ -408,13 +412,13 @@ export default function DashboardPage() {
                 value={leaveForm.reason}
                 onChange={(e) => setLeaveForm((f) => ({ ...f, reason: e.target.value }))}
                 placeholder="Optional reason…"
-                className="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950"
+                className="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-slate-950"
               />
             </div>
             <button
               type="submit"
               disabled={leaveSubmitting}
-              className="rounded-lg bg-navy-700 py-2.5 text-sm font-semibold text-white hover:bg-navy-600 disabled:opacity-60"
+              className="rounded-lg bg-noonan-red py-2.5 text-sm font-semibold text-white hover:bg-noonan-red-dark disabled:opacity-60"
             >
               {leaveSubmitting ? "Submitting…" : "Submit Leave Request"}
             </button>

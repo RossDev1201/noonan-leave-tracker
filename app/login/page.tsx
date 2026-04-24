@@ -28,27 +28,29 @@ function LoginForm() {
   }
 
   return (
-    <div className="flex min-h-screen flex-col items-center justify-center bg-slate-50 px-4 dark:bg-slate-950">
-      {/* Top-right theme toggle */}
+    <div className="flex min-h-screen flex-col items-center justify-center bg-noonan-cream px-4 dark:bg-black">
       <div className="absolute right-4 top-4">
         <ThemeToggle />
       </div>
 
       <div className="w-full max-w-sm">
-        {/* Logo / brand */}
-        <div className="mb-8 text-center">
-          <div className="mx-auto mb-3 flex h-14 w-14 items-center justify-center rounded-2xl bg-navy-700 shadow-lg">
-            <span className="text-2xl font-extrabold text-white">N</span>
-          </div>
-          <h1 className="text-2xl font-bold text-slate-900 dark:text-slate-50">Noonan</h1>
-          <p className="mt-1 text-sm text-slate-500 dark:text-slate-400">Leave &amp; Invoice Tracker</p>
+        {/* Brand header */}
+        <div className="mb-8">
+          <img src="/noonan-logo-red.svg" alt="Noonan Real Estate Agency" className="h-16 w-auto dark:hidden" />
+          <img src="/noonan-logo-white.svg" alt="Noonan Real Estate Agency" className="h-16 w-auto hidden dark:block" />
+          <p className="mt-3 text-xs font-semibold uppercase tracking-[3px] text-noonan-gray dark:text-noonan-warmgray">
+            Leave &amp; Invoice Tracker
+          </p>
         </div>
 
         {/* Card */}
-        <div className="rounded-2xl bg-white px-8 py-8 shadow-xl ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
+        <div className="border border-noonan-lightgray bg-white px-8 py-8 dark:border-[#333] dark:bg-[#111]">
+          {/* Red accent bar */}
+          <div className="mb-6 h-1 w-12 bg-noonan-red" />
+
           <form onSubmit={handleSubmit} className="flex flex-col gap-5">
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-widest text-noonan-gray dark:text-noonan-warmgray">
                 Username
               </label>
               <input
@@ -57,12 +59,12 @@ function LoginForm() {
                 required
                 value={username}
                 onChange={(e) => setUsername(e.target.value)}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 text-sm text-slate-900 outline-none transition focus:border-navy-700 focus:ring-2 focus:ring-navy-700/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-navy-400"
+                className="w-full border border-noonan-lightgray bg-noonan-cream px-3 py-2.5 text-sm text-black outline-none transition focus:border-noonan-red dark:border-[#333] dark:bg-[#0a0a0a] dark:text-noonan-cream dark:focus:border-noonan-red"
               />
             </div>
 
             <div>
-              <label className="mb-1.5 block text-xs font-semibold uppercase tracking-wide text-slate-500 dark:text-slate-400">
+              <label className="mb-1.5 block text-[11px] font-semibold uppercase tracking-widest text-noonan-gray dark:text-noonan-warmgray">
                 Password
               </label>
               <div className="relative">
@@ -72,12 +74,12 @@ function LoginForm() {
                   required
                   value={password}
                   onChange={(e) => setPassword(e.target.value)}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2.5 pr-10 text-sm text-slate-900 outline-none transition focus:border-navy-700 focus:ring-2 focus:ring-navy-700/20 dark:border-slate-700 dark:bg-slate-950 dark:text-slate-100 dark:focus:border-navy-400"
+                  className="w-full border border-noonan-lightgray bg-noonan-cream px-3 py-2.5 pr-10 text-sm text-black outline-none transition focus:border-noonan-red dark:border-[#333] dark:bg-[#0a0a0a] dark:text-noonan-cream dark:focus:border-noonan-red"
                 />
                 <button
                   type="button"
                   onClick={() => setShowPassword((v) => !v)}
-                  className="absolute right-3 top-1/2 -translate-y-1/2 text-slate-400 hover:text-slate-600 dark:hover:text-slate-200"
+                  className="absolute right-3 top-1/2 -translate-y-1/2 text-noonan-gray hover:text-black dark:text-noonan-warmgray dark:hover:text-noonan-cream"
                   aria-label={showPassword ? "Hide password" : "Show password"}
                 >
                   {showPassword ? (
@@ -95,7 +97,7 @@ function LoginForm() {
             </div>
 
             {error && (
-              <p className="rounded-lg bg-rose-50 px-3 py-2.5 text-xs font-medium text-rose-600 ring-1 ring-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:ring-rose-800">
+              <p className="border border-noonan-red/30 bg-noonan-red/10 px-3 py-2.5 text-xs font-medium text-noonan-red">
                 {error}
               </p>
             )}
@@ -103,14 +105,14 @@ function LoginForm() {
             <button
               type="submit"
               disabled={loading}
-              className="mt-1 rounded-lg bg-navy-700 px-4 py-2.5 text-sm font-semibold text-white shadow-sm transition hover:bg-navy-600 focus:outline-none focus:ring-2 focus:ring-navy-700/40 disabled:opacity-60"
+              className="mt-1 bg-noonan-red px-4 py-2.5 text-sm font-semibold text-white transition hover:bg-noonan-red-dark disabled:opacity-60"
             >
               {loading ? "Signing in…" : "Sign In"}
             </button>
           </form>
         </div>
 
-        <p className="mt-6 text-center text-xs text-slate-400">
+        <p className="mt-6 text-[11px] uppercase tracking-widest text-noonan-gray dark:text-noonan-warmgray">
           Noonan Internal Portal &copy; {new Date().getFullYear()}
         </p>
       </div>

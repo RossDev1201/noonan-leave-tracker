@@ -8,10 +8,15 @@ body {
 }
 
 body {
-  @apply bg-slate-950 text-slate-50 antialiased;
+  @apply bg-noonan-cream text-black antialiased dark:bg-black dark:text-noonan-cream;
 }
 
 table {
   border-collapse: separate;
   border-spacing: 0;
 }
+
+::-webkit-scrollbar { width: 6px; height: 6px; }
+::-webkit-scrollbar-track { background: transparent; }
+::-webkit-scrollbar-thumb { background: #595959; }
+::-webkit-scrollbar-thumb:hover { background: #c42032; }

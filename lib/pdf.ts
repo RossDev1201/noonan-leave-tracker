@@ -123,8 +123,7 @@ export async function generateInvoicePdf(p: PayslipData): Promise<Uint8Array> {
 
   // Earnings rows
   const earningsRows: Array<[string, string, string, string, string, boolean]> = [
-    ["Admin Task Pay:", "", String(p.hoursAwarded), formatPeso(p.hourlyRate), formatPeso(p.adminTaskPay), false],
-    ["Recep Task", "", "", "", formatPeso(p.recepTaskPay), false],
+    ["Recep Task", "", String(p.hoursAwarded), formatPeso(p.hourlyRate), formatPeso(p.recepTaskPay), false],
     ["Other Contract Clause", "Internet fee", "", "", formatPeso(p.internetFee), false],
     ["Other Contract Clause", "Medical Fee", "", "", formatPeso(p.medicalFee), false],
   ];
