@@ -127,6 +127,60 @@ function getClientHHMM(): string {
   return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
 }
 
+function toMins(hhmm: string): number {
+  const [h, m] = hhmm.split(":").map(Number);
+  return h * 60 + (m ?? 0);
+}
+
+type LoginAlarm = "normal" | "green" | "yellow" | "orange" | "red";
+type LogoutAlarm = "normal" | "green" | "yellow" | "orange" | "safe" | "overtime";
+
+function getLoginAlarm(schedule: EmployeeSchedule | null | undefined, nowMins: number): LoginAlarm {
+  if (!schedule) return "normal";
+  const diff = toMins(schedule.startTime) - nowMins;
+  if (diff <= 0) return "red";
+  if (diff <= 5) return "orange";
+  if (diff <= 10) return "yellow";
+  if (diff <= 30) return "green";
+  return "normal";
+}
+
+function getLogoutAlarm(schedule: EmployeeSchedule | null | undefined, nowMins: number): LogoutAlarm {
+  if (!schedule) return "normal";
+  const diff = toMins(schedule.endTime) - nowMins;
+  if (diff <= -60) return "overtime";
+  if (diff <= 0) return "safe";
+  if (diff <= 5) return "orange";
+  if (diff <= 10) return "yellow";
+  if (diff <= 30) return "green";
+  return "normal";
+}
+
+function loginButtonClass(alarm: LoginAlarm, disabled: boolean): string {
+  const base = "flex-1 py-3 text-sm font-semibold text-white transition disabled:opacity-50";
+  if (disabled) return `${base} bg-noonan-red`;
+  switch (alarm) {
+    case "red":    return `${base} bg-rose-600 btn-blink`;
+    case "orange": return `${base} bg-orange-500 btn-blink`;
+    case "yellow": return `${base} bg-yellow-500 btn-blink-slow`;
+    case "green":  return `${base} bg-emerald-600 animate-pulse`;
+    default:       return `${base} bg-noonan-red hover:bg-noonan-red-dark`;
+  }
+}
+
+function logoutButtonClass(alarm: LogoutAlarm, disabled: boolean): string {
+  const base = "flex-1 py-3 text-sm font-semibold text-white transition disabled:opacity-50";
+  if (disabled) return `${base} bg-amber-500`;
+  switch (alarm) {
+    case "overtime":
+    case "safe":   return `${base} bg-emerald-600 animate-pulse`;
+    case "orange": return `${base} bg-orange-500 btn-blink`;
+    case "yellow": return `${base} bg-yellow-500 animate-pulse`;
+    case "green":  return `${base} bg-emerald-600 animate-pulse`;
+    default:       return `${base} bg-amber-500 hover:bg-amber-400`;
+  }
+}
+
 export default function DashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -135,6 +189,7 @@ export default function DashboardPage() {
   const [actionLoading, setActionLoading] = useState(false);
   const [actionTag, setActionTag] = useState<"late" | "early" | "on_time" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
+  const [nowMins, setNowMins] = useState(() => { const n = new Date(); return n.getHours() * 60 + n.getMinutes(); });
 
   const [leaveForm, setLeaveForm] = useState<LeaveForm>({
     leaveDate: new Date().toISOString().slice(0, 10),
@@ -192,6 +247,15 @@ export default function DashboardPage() {
     const id = setInterval(() => { void fetchStatus(); }, 60000);
     return () => clearInterval(id);
   }, [status, user]);
+
+  // Keep nowMins current for the color alarm system
+  useEffect(() => {
+    const id = setInterval(() => {
+      const n = new Date();
+      setNowMins(n.getHours() * 60 + n.getMinutes());
+    }, 30000);
+    return () => clearInterval(id);
+  }, []);
 
   async function fetchStatus() {
     const res = await fetch("/api/time/status");
@@ -361,6 +425,14 @@ export default function DashboardPage() {
   const daysLeft = clockStatus.daysUntilCutoffDeadline ?? 99;
   const showCutoffWarning = daysLeft >= 0 && daysLeft <= 3;
 
+  const loginAlarm = clockStatus.status === "not_clocked_in"
+    ? getLoginAlarm(clockStatus.schedule, nowMins)
+    : "normal";
+  const logoutAlarm = clockStatus.status === "clocked_in"
+    ? getLogoutAlarm(clockStatus.schedule, nowMins)
+    : "normal";
+  const showOvertimeNotice = logoutAlarm === "overtime";
+
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
       <div className="mx-auto max-w-xl px-4 py-8">
@@ -434,6 +506,19 @@ export default function DashboardPage() {
             >
               View Invoice →
             </button>
+          </div>
+        )}
+
+        {/* Overtime reward notification */}
+        {showOvertimeNotice && clockStatus.schedule && (
+          <div className="mb-4 rounded-xl bg-emerald-50 px-4 py-3 ring-1 ring-emerald-300 dark:bg-emerald-900/20 dark:ring-emerald-700">
+            <p className="text-sm font-semibold text-emerald-800 dark:text-emerald-200">
+              Overtime Detected — Great work!
+            </p>
+            <p className="mt-1 text-xs text-emerald-700 dark:text-emerald-300">
+              You have worked 1+ hour past your scheduled end time ({clockStatus.schedule.endTime}).
+              You may be entitled to overtime pay — pending admin approval. Clock out when you are done.
+            </p>
           </div>
         )}
 
@@ -525,14 +610,23 @@ export default function DashboardPage() {
           <div className="flex gap-3">
             {clockStatus.status === "not_clocked_in" && (
               <button onClick={handleClockIn} disabled={actionLoading}
-                className="flex-1 rounded-lg bg-noonan-red py-3 text-sm font-semibold text-white transition hover:bg-noonan-red-dark disabled:opacity-50">
-                {actionLoading ? "Clocking in…" : "Clock In"}
+                className={loginButtonClass(loginAlarm, actionLoading)}>
+                <span>{actionLoading ? "Clocking in…" : "Clock In"}</span>
+                {loginAlarm === "red" && <span className="mt-0.5 block text-[10px] font-normal opacity-90">You are late — clock in now</span>}
+                {loginAlarm === "orange" && <span className="mt-0.5 block text-[10px] font-normal opacity-90">5 min to start — clock in soon</span>}
+                {loginAlarm === "yellow" && <span className="mt-0.5 block text-[10px] font-normal opacity-90">10 min to start — get ready</span>}
+                {loginAlarm === "green" && <span className="mt-0.5 block text-[10px] font-normal opacity-90">30 min to start — shift soon</span>}
               </button>
             )}
             {clockStatus.status === "clocked_in" && (
               <button onClick={handleClockOut} disabled={actionLoading}
-                className="flex-1 rounded-lg bg-amber-500 py-3 text-sm font-semibold text-white transition hover:bg-amber-400 disabled:opacity-50">
-                {actionLoading ? "Clocking out…" : "Clock Out"}
+                className={logoutButtonClass(logoutAlarm, actionLoading)}>
+                <span>{actionLoading ? "Clocking out…" : "Clock Out"}</span>
+                {logoutAlarm === "safe" && <span className="mt-0.5 block text-[10px] font-normal opacity-90">Shift ended — safe to clock out</span>}
+                {logoutAlarm === "orange" && <span className="mt-0.5 block text-[10px] font-normal opacity-90">5 min left — wrap up now</span>}
+                {logoutAlarm === "yellow" && <span className="mt-0.5 block text-[10px] font-normal opacity-90">10 min left — start wrapping up</span>}
+                {logoutAlarm === "green" && <span className="mt-0.5 block text-[10px] font-normal opacity-90">30 min to end — shift ending soon</span>}
+                {logoutAlarm === "overtime" && <span className="mt-0.5 block text-[10px] font-normal opacity-90">1 hr overtime — clock out when done</span>}
               </button>
             )}
             {clockStatus.status === "clocked_out" && (

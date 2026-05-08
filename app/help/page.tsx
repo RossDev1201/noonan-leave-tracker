@@ -250,22 +250,24 @@ export default function HelpPage() {
           <ThemeToggle />
         </div>
 
-        {/* Role switcher */}
-        <div className="mb-8 flex border border-noonan-lightgray dark:border-[#333]">
-          {(["admin", "member"] as const).map((role) => (
-            <button
-              key={role}
-              onClick={() => setActiveRole(role)}
-              className={`flex-1 py-2.5 text-xs font-semibold uppercase tracking-widest transition-colors ${
-                activeRole === role
-                  ? "bg-noonan-red text-white"
-                  : "bg-white text-noonan-gray hover:bg-noonan-lightgray dark:bg-[#111] dark:text-noonan-warmgray dark:hover:bg-[#1a1a1a]"
-              }`}
-            >
-              {role === "admin" ? "Admin Guide" : "Member Guide"}
-            </button>
-          ))}
-        </div>
+        {/* Role switcher — admins only */}
+        {isAdmin && (
+          <div className="mb-8 flex border border-noonan-lightgray dark:border-[#333]">
+            {(["admin", "member"] as const).map((role) => (
+              <button
+                key={role}
+                onClick={() => setActiveRole(role)}
+                className={`flex-1 py-2.5 text-xs font-semibold uppercase tracking-widest transition-colors ${
+                  activeRole === role
+                    ? "bg-noonan-red text-white"
+                    : "bg-white text-noonan-gray hover:bg-noonan-lightgray dark:bg-[#111] dark:text-noonan-warmgray dark:hover:bg-[#1a1a1a]"
+                }`}
+              >
+                {role === "admin" ? "Admin Guide" : "Member Guide"}
+              </button>
+            ))}
+          </div>
+        )}
 
         {/* Sections */}
         <div className="space-y-6">
