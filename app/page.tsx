@@ -64,6 +64,19 @@ type InvoiceEditRequest = {
   reviewedAt?: string;
 };
 
+type ManualChangeRequest = {
+  requestId: string;
+  employeeId: string;
+  date: string;
+  requestedLoginTime: string;
+  requestedLogoutTime: string;
+  reason: string;
+  status: "Pending" | "Approved" | "Rejected";
+  requestedAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+};
+
 function makeInitialForm(): LeaveFormState {
   return { date: new Date().toISOString().slice(0, 10), days: "", type: "Annual", note: "", loading: false };
 }
@@ -93,7 +106,9 @@ export default function AdminPage() {
   const [savedContracts, setSavedContracts] = useState<SavedContract[]>([]);
   const [editRequests, setEditRequests] = useState<InvoiceEditRequest[]>([]);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"leave" | "schedules" | "contracts" | "editRequests" | "attendance">("leave");
+  const [changeRequests, setChangeRequests] = useState<ManualChangeRequest[]>([]);
+  const [reviewingChangeId, setReviewingChangeId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"leave" | "schedules" | "contracts" | "editRequests" | "attendance" | "changeRequests">("leave");
 
   // Attendance / manual punch state
   const [punchEmpId, setPunchEmpId] = useState("");
@@ -119,6 +134,7 @@ export default function AdminPage() {
       void fetchSchedules();
       void fetchContracts();
       void fetchEditRequests();
+      void fetchChangeRequests();
       // Default backfill from = current cutoff start (16th of month or 1st)
       const now = new Date();
       const day = now.getDate();
@@ -178,6 +194,25 @@ export default function AdminPage() {
       const data = await res.json() as { requests: InvoiceEditRequest[] };
       setEditRequests(data.requests);
     }
+  }
+
+  async function fetchChangeRequests() {
+    const res = await fetch("/api/admin/change-requests");
+    if (res.ok) {
+      const data = await res.json() as { requests: ManualChangeRequest[] };
+      setChangeRequests(data.requests.sort((a, b) => b.requestedAt.localeCompare(a.requestedAt)));
+    }
+  }
+
+  async function handleReviewChangeRequest(requestId: string, status: "Approved" | "Rejected") {
+    setReviewingChangeId(requestId);
+    const res = await fetch("/api/admin/change-requests", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId, status }),
+    });
+    setReviewingChangeId(null);
+    if (res.ok) void fetchChangeRequests();
   }
 
   async function fetchSchedules() {
@@ -375,6 +410,12 @@ export default function AdminPage() {
               View Invoice
             </button>
             <button
+              onClick={() => router.push("/attendance")}
+              className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-300 dark:bg-[#1a1a1a] dark:text-slate-300 dark:hover:bg-slate-700"
+            >
+              Attendance Log
+            </button>
+            <button
               onClick={() => router.push("/history")}
               className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-300 dark:bg-[#1a1a1a] dark:text-slate-300 dark:hover:bg-slate-700"
             >
@@ -405,6 +446,7 @@ export default function AdminPage() {
             { key: "schedules", label: "Schedules" },
             { key: "contracts", label: "Contracts" },
             { key: "editRequests", label: `Edit Requests${editRequests.filter(r => r.status === "Pending").length > 0 ? ` (${editRequests.filter(r => r.status === "Pending").length})` : ""}` },
+            { key: "changeRequests", label: `Time Corrections${changeRequests.filter(r => r.status === "Pending").length > 0 ? ` (${changeRequests.filter(r => r.status === "Pending").length})` : ""}` },
             { key: "attendance", label: "Attendance" },
           ] as const).map(({ key, label }) => (
             <button
@@ -774,6 +816,86 @@ export default function AdminPage() {
             )}
           </section>
         )}
+        {/* ── CHANGE REQUESTS TAB ── */}
+        {activeTab === "changeRequests" && (
+          <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-[#111] dark:border-[#333]">
+            <div className="mb-4">
+              <h2 className="text-base font-semibold">Time Correction Requests</h2>
+              <p className="mt-0.5 text-xs text-slate-400">
+                Members submit these when they need to correct a past clock-in/out. Approve to apply the change to the TimeTracking sheet automatically.
+              </p>
+            </div>
+            {changeRequests.length === 0 ? (
+              <p className="py-4 text-center text-sm text-slate-400">No correction requests yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {changeRequests
+                  .sort((a, b) => {
+                    const order = { Pending: 0, Approved: 1, Rejected: 2 };
+                    return (order[a.status] - order[b.status]) || b.requestedAt.localeCompare(a.requestedAt);
+                  })
+                  .map((req) => {
+                    const emp = employees.find((e) => e.id === req.employeeId);
+                    return (
+                      <div key={req.requestId} className={`rounded-xl p-4 ring-1 ${
+                        req.status === "Pending"
+                          ? "bg-amber-50 ring-amber-200 dark:bg-amber-900/20 dark:ring-amber-800"
+                          : req.status === "Approved"
+                          ? "bg-emerald-50 ring-emerald-200 dark:bg-emerald-900/20 dark:ring-emerald-800"
+                          : "bg-slate-50 ring-slate-200 dark:bg-[#1a1a1a]/60 dark:border-[#444]"
+                      }`}>
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <span className="font-semibold text-sm">{emp?.fullName ?? req.employeeId}</span>
+                            <span className="ml-2 font-mono text-xs text-slate-400">{req.date}</span>
+                          </div>
+                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${
+                            req.status === "Pending"
+                              ? "bg-amber-100 text-amber-700 ring-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:ring-amber-800"
+                              : req.status === "Approved"
+                              ? "bg-emerald-100 text-emerald-700 ring-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:ring-emerald-800"
+                              : "bg-slate-200 text-slate-600 ring-slate-300 dark:bg-slate-700 dark:text-slate-400 dark:ring-slate-600"
+                          }`}>
+                            {req.status}
+                          </span>
+                        </div>
+                        <div className="mb-3 grid grid-cols-3 gap-2 text-xs">
+                          <div><span className="text-slate-400">Clock In:</span> <span className="font-mono font-medium">{req.requestedLoginTime}</span></div>
+                          <div><span className="text-slate-400">Clock Out:</span> <span className="font-mono font-medium">{req.requestedLogoutTime || "—"}</span></div>
+                          <div><span className="text-slate-400">Submitted:</span> <span className="font-medium">{new Date(req.requestedAt).toLocaleDateString()}</span></div>
+                          {req.reason && <div className="col-span-3"><span className="text-slate-400">Reason:</span> <span className="font-medium">{req.reason}</span></div>}
+                        </div>
+                        {req.status === "Pending" && (
+                          <div className="flex gap-2">
+                            <button
+                              disabled={reviewingChangeId === req.requestId}
+                              onClick={() => handleReviewChangeRequest(req.requestId, "Approved")}
+                              className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                            >
+                              {reviewingChangeId === req.requestId ? "…" : "Approve & Apply"}
+                            </button>
+                            <button
+                              disabled={reviewingChangeId === req.requestId}
+                              onClick={() => handleReviewChangeRequest(req.requestId, "Rejected")}
+                              className="rounded-md bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-60"
+                            >
+                              {reviewingChangeId === req.requestId ? "…" : "Reject"}
+                            </button>
+                          </div>
+                        )}
+                        {req.reviewedAt && (
+                          <p className="mt-1 text-[11px] text-slate-400">
+                            Reviewed {new Date(req.reviewedAt).toLocaleString()}{req.reviewedBy ? ` by ${req.reviewedBy}` : ""}
+                          </p>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </section>
+        )}
+
         {/* ── ATTENDANCE TAB ── */}
         {activeTab === "attendance" && (
           <div className="space-y-4">

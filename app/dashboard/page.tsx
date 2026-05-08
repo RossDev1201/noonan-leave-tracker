@@ -19,6 +19,8 @@ type ClockStatus = {
   attendanceStatus?: "on_time" | "late" | "no_schedule" | null;
   departureStatus?: "on_time" | "early" | "no_schedule" | null;
   isCutoffDay?: boolean;
+  cutoffDueDate?: string;
+  daysUntilCutoffDeadline?: number;
 };
 
 type PeriodSummary = {
@@ -35,6 +37,23 @@ type LeaveForm = {
   reason: string;
 };
 
+type ChangeRequestForm = {
+  date: string;
+  requestedLoginTime: string;
+  requestedLogoutTime: string;
+  reason: string;
+};
+
+type MyChangeRequest = {
+  requestId: string;
+  date: string;
+  requestedLoginTime: string;
+  requestedLogoutTime: string;
+  reason: string;
+  status: "Pending" | "Approved" | "Rejected";
+  requestedAt: string;
+};
+
 function StatusBadge({ label, variant }: { label: string; variant: "late" | "early" | "on_time" }) {
   const styles = {
     late: "bg-rose-100 text-rose-700 ring-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:ring-rose-800",
@@ -48,6 +67,11 @@ function StatusBadge({ label, variant }: { label: string; variant: "late" | "ear
   );
 }
 
+function getClientHHMM(): string {
+  const now = new Date();
+  return `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+}
+
 export default function DashboardPage() {
   const { data: session, status } = useSession();
   const router = useRouter();
@@ -57,9 +81,12 @@ export default function DashboardPage() {
   const [actionTag, setActionTag] = useState<"late" | "early" | "on_time" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const today = new Date().toISOString().slice(0, 10);
+  // Live local clock synced to the user's OS via new Date()
+  const [localTime, setLocalTime] = useState<string>("");
+  const [localDate, setLocalDate] = useState<string>("");
+
   const [leaveForm, setLeaveForm] = useState<LeaveForm>({
-    leaveDate: today,
+    leaveDate: new Date().toISOString().slice(0, 10),
     days: "1",
     type: "Annual",
     reason: "",
@@ -67,8 +94,35 @@ export default function DashboardPage() {
   const [leaveSubmitting, setLeaveSubmitting] = useState(false);
   const [leaveMessage, setLeaveMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
+  // Time correction request
+  const [changeRequests, setChangeRequests] = useState<MyChangeRequest[]>([]);
+  const [showCorrectionForm, setShowCorrectionForm] = useState(false);
+  const [correctionForm, setCorrectionForm] = useState<ChangeRequestForm>({
+    date: "",
+    requestedLoginTime: "09:00",
+    requestedLogoutTime: "17:00",
+    reason: "",
+  });
+  const [correctionSubmitting, setCorrectionSubmitting] = useState(false);
+  const [correctionMessage, setCorrectionMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
   const user = session?.user as { role?: string; employeeId?: string; name?: string } | undefined;
   const name = user?.name ?? "there";
+
+  // Live clock — reads from browser's OS clock every second
+  useEffect(() => {
+    function tick() {
+      const now = new Date();
+      const hh = String(now.getHours()).padStart(2, "0");
+      const mm = String(now.getMinutes()).padStart(2, "0");
+      const ss = String(now.getSeconds()).padStart(2, "0");
+      setLocalTime(`${hh}:${mm}:${ss}`);
+      setLocalDate(now.toLocaleDateString(undefined, { weekday: "long", year: "numeric", month: "long", day: "numeric" }));
+    }
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
 
   useEffect(() => {
     if (status === "unauthenticated") router.push("/login");
@@ -79,7 +133,15 @@ export default function DashboardPage() {
     if (status === "authenticated" && user?.role === "member") {
       void fetchStatus();
       void fetchSummary();
+      void fetchChangeRequests();
     }
+  }, [status, user]);
+
+  // Re-sync status every minute to keep the page accurate
+  useEffect(() => {
+    if (status !== "authenticated" || user?.role !== "member") return;
+    const id = setInterval(() => { void fetchStatus(); }, 60000);
+    return () => clearInterval(id);
   }, [status, user]);
 
   async function fetchStatus() {
@@ -102,11 +164,23 @@ export default function DashboardPage() {
     }
   }
 
+  async function fetchChangeRequests() {
+    const res = await fetch("/api/time/change-request");
+    if (res.ok) {
+      const data = await res.json() as { requests: MyChangeRequest[] };
+      setChangeRequests(data.requests.sort((a, b) => b.requestedAt.localeCompare(a.requestedAt)));
+    }
+  }
+
   async function handleClockIn() {
     setActionLoading(true);
     setActionError(null);
     setActionTag(null);
-    const res = await fetch("/api/time/login", { method: "POST" });
+    const res = await fetch("/api/time/login", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientTime: getClientHHMM() }),
+    });
     const data = await res.json() as { error?: string; loginTime?: string; attendanceStatus?: string };
     setActionLoading(false);
     if (res.ok) {
@@ -123,7 +197,11 @@ export default function DashboardPage() {
     setActionLoading(true);
     setActionError(null);
     setActionTag(null);
-    const res = await fetch("/api/time/logout", { method: "POST" });
+    const res = await fetch("/api/time/logout", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ clientTime: getClientHHMM() }),
+    });
     const data = await res.json() as { error?: string; logoutTime?: string; departureStatus?: string };
     setActionLoading(false);
     if (res.ok) {
@@ -154,9 +232,30 @@ export default function DashboardPage() {
     setLeaveSubmitting(false);
     if (res.ok) {
       setLeaveMessage({ type: "success", text: "Leave request submitted! Awaiting admin review." });
-      setLeaveForm({ leaveDate: today, days: "1", type: "Annual", reason: "" });
+      setLeaveForm({ leaveDate: new Date().toISOString().slice(0, 10), days: "1", type: "Annual", reason: "" });
     } else {
       setLeaveMessage({ type: "error", text: data.error ?? "Failed to submit request" });
+    }
+  }
+
+  async function handleCorrectionSubmit(e: React.FormEvent) {
+    e.preventDefault();
+    setCorrectionSubmitting(true);
+    setCorrectionMessage(null);
+    const res = await fetch("/api/time/change-request", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(correctionForm),
+    });
+    const data = await res.json() as { error?: string };
+    setCorrectionSubmitting(false);
+    if (res.ok) {
+      setCorrectionMessage({ type: "success", text: "Correction request submitted! Awaiting admin approval." });
+      setCorrectionForm({ date: "", requestedLoginTime: "09:00", requestedLogoutTime: "17:00", reason: "" });
+      setShowCorrectionForm(false);
+      void fetchChangeRequests();
+    } else {
+      setCorrectionMessage({ type: "error", text: data.error ?? "Failed to submit" });
     }
   }
 
@@ -167,6 +266,10 @@ export default function DashboardPage() {
       </div>
     );
   }
+
+  const today = clockStatus.date ?? new Date().toISOString().slice(0, 10);
+  const daysLeft = clockStatus.daysUntilCutoffDeadline ?? 99;
+  const showCutoffWarning = daysLeft >= 0 && daysLeft <= 3;
 
   return (
     <main className="min-h-screen bg-slate-50 text-slate-900 dark:bg-slate-950 dark:text-slate-100">
@@ -179,6 +282,10 @@ export default function DashboardPage() {
           </div>
           <div className="flex flex-wrap items-center gap-2">
             <ThemeToggle />
+            <button onClick={() => router.push("/attendance")}
+              className="rounded-lg border border-noonan-lightgray bg-white px-3 py-1.5 text-xs font-medium text-noonan-gray hover:border-noonan-red hover:text-noonan-red dark:border-[#333] dark:bg-[#111] dark:text-noonan-cream">
+              Attendance
+            </button>
             <button onClick={() => router.push("/history")}
               className="rounded-lg border border-noonan-lightgray bg-white px-3 py-1.5 text-xs font-medium text-noonan-gray hover:border-noonan-red hover:text-noonan-red dark:border-[#333] dark:bg-[#111] dark:text-noonan-cream">
               History
@@ -193,6 +300,19 @@ export default function DashboardPage() {
             </button>
           </div>
         </header>
+
+        {/* ── Live System Clock (auto-synced to OS) ── */}
+        <div className="mb-4 rounded-2xl border border-noonan-lightgray bg-white px-5 py-4 dark:border-[#333] dark:bg-[#111]">
+          <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400">
+            Local Time (Auto-Synced)
+          </p>
+          <div className="flex items-baseline gap-3">
+            <span className="font-mono text-3xl font-bold tabular-nums text-noonan-red">
+              {localTime || "--:--:--"}
+            </span>
+            <span className="text-xs text-slate-400">{localDate}</span>
+          </div>
+        </div>
 
         {/* ── Persistent welcome / goodbye banner ── */}
         {clockStatus.status === "clocked_in" && clockStatus.loginTime && (
@@ -234,6 +354,20 @@ export default function DashboardPage() {
             >
               View Invoice →
             </button>
+          </div>
+        )}
+
+        {/* Cutoff deadline warning */}
+        {showCutoffWarning && (
+          <div className={`mb-4 rounded-xl px-4 py-3 text-sm ring-1 ${
+            daysLeft === 0
+              ? "bg-rose-50 text-rose-800 ring-rose-200 dark:bg-rose-900/20 dark:text-rose-200 dark:ring-rose-800"
+              : "bg-amber-50 text-amber-800 ring-amber-200 dark:bg-amber-900/20 dark:text-amber-200 dark:ring-amber-800"
+          }`}>
+            {daysLeft === 0
+              ? `Payroll cutoff deadline is TODAY (${clockStatus.cutoffDueDate}). Submit any time corrections or overtime now.`
+              : `Payroll cutoff deadline in ${daysLeft} day${daysLeft === 1 ? "" : "s"} (${clockStatus.cutoffDueDate}). Records lock after this date.`
+            }
           </div>
         )}
 
@@ -335,7 +469,7 @@ export default function DashboardPage() {
         </section>
 
         {/* Current period + invoice */}
-        <section className="rounded-2xl border border-noonan-lightgray bg-white p-6 dark:border-[#333] dark:bg-[#111]">
+        <section className="mb-4 rounded-2xl border border-noonan-lightgray bg-white p-6 dark:border-[#333] dark:bg-[#111]">
           <h2 className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">Current Period</h2>
           {summary ? (
             <>
@@ -362,8 +496,122 @@ export default function DashboardPage() {
           </button>
         </section>
 
+        {/* ── Time Correction Requests ── */}
+        <section className="mb-4 rounded-2xl border border-noonan-lightgray bg-white p-6 dark:border-[#333] dark:bg-[#111]">
+          <div className="mb-4 flex items-center justify-between">
+            <div>
+              <h2 className="text-xs font-semibold uppercase tracking-wider text-slate-400">
+                Time Corrections
+              </h2>
+              <p className="mt-0.5 text-[11px] text-slate-400">
+                Request a correction for past attendance records. Admin approval required.
+              </p>
+            </div>
+            <button
+              onClick={() => { setShowCorrectionForm((v) => !v); setCorrectionMessage(null); }}
+              className="rounded-lg bg-noonan-red px-3 py-1.5 text-xs font-semibold text-white hover:bg-noonan-red-dark"
+            >
+              {showCorrectionForm ? "Cancel" : "+ New Request"}
+            </button>
+          </div>
+
+          {showCorrectionForm && (
+            <form onSubmit={handleCorrectionSubmit} className="mb-4 flex flex-col gap-3 rounded-xl border border-noonan-lightgray bg-slate-50 p-4 dark:border-[#333] dark:bg-[#1a1a1a]">
+              <div className="grid grid-cols-1 gap-3 sm:grid-cols-2">
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-500">Date to Correct</label>
+                  <input
+                    type="date"
+                    required
+                    max={today}
+                    value={correctionForm.date}
+                    onChange={(e) => setCorrectionForm((f) => ({ ...f, date: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-slate-950"
+                  />
+                </div>
+                <div />
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-500">Requested Clock In</label>
+                  <input
+                    type="time"
+                    required
+                    value={correctionForm.requestedLoginTime}
+                    onChange={(e) => setCorrectionForm((f) => ({ ...f, requestedLoginTime: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-slate-950"
+                  />
+                </div>
+                <div>
+                  <label className="mb-1 block text-xs font-medium text-slate-500">Requested Clock Out</label>
+                  <input
+                    type="time"
+                    value={correctionForm.requestedLogoutTime}
+                    onChange={(e) => setCorrectionForm((f) => ({ ...f, requestedLogoutTime: e.target.value }))}
+                    className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-slate-950"
+                  />
+                </div>
+              </div>
+              <div>
+                <label className="mb-1 block text-xs font-medium text-slate-500">Reason</label>
+                <textarea
+                  rows={2}
+                  required
+                  placeholder="Explain why this correction is needed…"
+                  value={correctionForm.reason}
+                  onChange={(e) => setCorrectionForm((f) => ({ ...f, reason: e.target.value }))}
+                  className="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-slate-950"
+                />
+              </div>
+              <button
+                type="submit"
+                disabled={correctionSubmitting}
+                className="rounded-lg bg-noonan-red py-2.5 text-sm font-semibold text-white hover:bg-noonan-red-dark disabled:opacity-60"
+              >
+                {correctionSubmitting ? "Submitting…" : "Submit Correction Request"}
+              </button>
+              {correctionMessage && (
+                <p className={`text-xs ${correctionMessage.type === "success" ? "text-emerald-600 dark:text-emerald-400" : "text-rose-500"}`}>
+                  {correctionMessage.text}
+                </p>
+              )}
+            </form>
+          )}
+
+          {changeRequests.length === 0 ? (
+            <p className="text-xs text-slate-400">No correction requests submitted yet.</p>
+          ) : (
+            <div className="space-y-2">
+              {changeRequests.slice(0, 5).map((r) => (
+                <div key={r.requestId} className={`rounded-xl p-3 ring-1 text-xs ${
+                  r.status === "Pending"
+                    ? "bg-amber-50 ring-amber-200 dark:bg-amber-900/20 dark:ring-amber-800"
+                    : r.status === "Approved"
+                    ? "bg-emerald-50 ring-emerald-200 dark:bg-emerald-900/20 dark:ring-emerald-800"
+                    : "bg-slate-50 ring-slate-200 dark:bg-[#1a1a1a] dark:ring-slate-700"
+                }`}>
+                  <div className="flex items-center justify-between gap-2">
+                    <span className="font-mono font-semibold">{r.date}</span>
+                    <span className={`rounded-full px-2 py-0.5 font-semibold ring-1 ${
+                      r.status === "Pending"
+                        ? "bg-amber-100 text-amber-700 ring-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:ring-amber-800"
+                        : r.status === "Approved"
+                        ? "bg-emerald-100 text-emerald-700 ring-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:ring-emerald-800"
+                        : "bg-slate-200 text-slate-600 ring-slate-300 dark:bg-slate-700 dark:text-slate-400 dark:ring-slate-600"
+                    }`}>
+                      {r.status}
+                    </span>
+                  </div>
+                  <p className="mt-1 text-slate-500 dark:text-slate-400">
+                    {r.requestedLoginTime} – {r.requestedLogoutTime || "—"}
+                    {r.reason && <span className="ml-2 italic">· {r.reason}</span>}
+                  </p>
+                </div>
+              ))}
+            </div>
+          )}
+        </section>
+
         {/* Leave Request */}
-        <section className="mt-4 rounded-2xl border border-noonan-lightgray bg-white p-6 dark:border-[#333] dark:bg-[#111]">
+        <section className="rounded-2xl border border-noonan-lightgray bg-white p-6 dark:border-[#333] dark:bg-[#111]">
           <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-400">
             Request Leave
           </h2>

@@ -767,6 +767,103 @@ export async function upsertTimeEntry(
   }
 }
 
+// ─── Manual Change Requests ───────────────────────────────────────────────────
+
+const CHANGE_REQUESTS_RANGE = "ManualChangeRequests!A2:J";
+
+export type ManualChangeRequest = {
+  requestId: string;
+  employeeId: string;
+  date: string;
+  requestedLoginTime: string;
+  requestedLogoutTime: string;
+  reason: string;
+  status: "Pending" | "Approved" | "Rejected";
+  requestedAt: string;
+  reviewedAt?: string;
+  reviewedBy?: string;
+};
+
+export async function appendManualChangeRequest(
+  req: Omit<ManualChangeRequest, "requestId">
+): Promise<string> {
+  const sheets = getSheetsClient();
+  const requestId = `mcr-${req.employeeId}-${Date.now()}`;
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: "ManualChangeRequests!A:J",
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[
+        requestId, req.employeeId, req.date,
+        req.requestedLoginTime, req.requestedLogoutTime,
+        req.reason, req.status, req.requestedAt, "", "",
+      ]],
+    },
+  });
+  return requestId;
+}
+
+export async function getManualChangeRequests(employeeId?: string): Promise<ManualChangeRequest[]> {
+  const sheets = getSheetsClient();
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: CHANGE_REQUESTS_RANGE,
+    });
+    const all = (res.data.values ?? [])
+      .filter((r) => r[0])
+      .map((r) => ({
+        requestId: String(r[0]),
+        employeeId: String(r[1] ?? ""),
+        date: String(r[2] ?? ""),
+        requestedLoginTime: String(r[3] ?? ""),
+        requestedLogoutTime: String(r[4] ?? ""),
+        reason: String(r[5] ?? ""),
+        status: String(r[6] ?? "Pending") as "Pending" | "Approved" | "Rejected",
+        requestedAt: String(r[7] ?? ""),
+        reviewedAt: r[8] ? String(r[8]) : undefined,
+        reviewedBy: r[9] ? String(r[9]) : undefined,
+      }));
+    return employeeId ? all.filter((r) => r.employeeId === employeeId) : all;
+  } catch {
+    return [];
+  }
+}
+
+export async function updateManualChangeRequestStatus(
+  requestId: string,
+  status: "Approved" | "Rejected",
+  reviewedBy: string
+): Promise<boolean> {
+  const sheets = getSheetsClient();
+  let res;
+  try {
+    res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: CHANGE_REQUESTS_RANGE,
+    });
+  } catch {
+    return false;
+  }
+  const rows = res.data.values ?? [];
+  let targetRow = -1;
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]) === requestId) {
+      targetRow = i + 2;
+      break;
+    }
+  }
+  if (targetRow === -1) return false;
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `ManualChangeRequests!G${targetRow}:J${targetRow}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[status, new Date().toISOString(), reviewedBy, ""]] },
+  });
+  return true;
+}
+
 export async function bulkAppendTimeEntries(
   rows: Array<[string, string, string, string, number]>
 ): Promise<void> {
