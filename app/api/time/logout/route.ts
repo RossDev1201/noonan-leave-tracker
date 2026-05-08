@@ -11,7 +11,7 @@ function toMinutes(hhmm: string): number {
   return h * 60 + (m ?? 0);
 }
 
-export async function POST() {
+export async function POST(req: Request) {
   const session = await getServerSession(authOptions);
   if (!session?.user) return NextResponse.json({ error: "Unauthorized" }, { status: 401 });
 
@@ -28,7 +28,16 @@ export async function POST() {
     return NextResponse.json({ error: "Already clocked out today" }, { status: 409 });
   }
 
-  const logoutTime = getPHTime();
+  // Prefer client-supplied local time; fall back to Philippine server time
+  let logoutTime: string;
+  try {
+    const body = await req.json() as { clientTime?: string };
+    logoutTime = (body.clientTime && /^\d{2}:\d{2}$/.test(body.clientTime))
+      ? body.clientTime
+      : getPHTime();
+  } catch {
+    logoutTime = getPHTime();
+  }
 
   const schedule = await getScheduleForEmployee(employeeId);
   let departureStatus: "on_time" | "early" | "no_schedule" = "no_schedule";

@@ -2,7 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getTodayStatus, getScheduleForEmployee } from "@/lib/googleSheets";
-import { isCutoffDay } from "@/lib/cutoff";
+import { isCutoffDay, getCurrentCutoff } from "@/lib/cutoff";
 import { getPHDate } from "@/lib/dateUtils";
 
 export const dynamic = "force-dynamic";
@@ -39,6 +39,11 @@ export async function GET() {
     departureStatus = "no_schedule";
   }
 
+  const cutoff = getCurrentCutoff();
+  const daysUntilCutoffDeadline = Math.ceil(
+    (new Date(cutoff.dueDate).getTime() - new Date(today).getTime()) / 86400000
+  );
+
   return NextResponse.json({
     ...clockStatus,
     date: today,
@@ -46,5 +51,7 @@ export async function GET() {
     attendanceStatus,
     departureStatus,
     isCutoffDay: isCutoffDay(),
+    cutoffDueDate: cutoff.dueDate,
+    daysUntilCutoffDeadline,
   });
 }
