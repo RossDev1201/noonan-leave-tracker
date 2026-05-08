@@ -767,6 +767,110 @@ export async function upsertTimeEntry(
   }
 }
 
+// ─── Time Edit Requests ───────────────────────────────────────────────────────
+
+const TIME_EDIT_REQUESTS_RANGE = "TimeEditRequests!A2:I";
+
+export type TimeEditRequest = {
+  requestId: string;
+  employeeId: string;
+  targetDate: string;
+  requestedLoginTime: string;
+  requestedLogoutTime: string;
+  reason: string;
+  status: "Pending" | "Approved" | "Rejected";
+  requestedAt: string;
+  reviewedAt?: string;
+};
+
+export async function appendTimeEditRequest(
+  req: Omit<TimeEditRequest, "requestId">
+): Promise<void> {
+  const sheets = getSheetsClient();
+  const requestId = `ter-${req.employeeId}-${Date.now()}`;
+  await sheets.spreadsheets.values.append({
+    spreadsheetId: SPREADSHEET_ID,
+    range: "TimeEditRequests!A:I",
+    valueInputOption: "USER_ENTERED",
+    requestBody: {
+      values: [[
+        requestId, req.employeeId, req.targetDate,
+        req.requestedLoginTime, req.requestedLogoutTime,
+        req.reason, req.status, req.requestedAt, "",
+      ]],
+    },
+  });
+}
+
+export async function getTimeEditRequests(employeeId?: string): Promise<TimeEditRequest[]> {
+  const sheets = getSheetsClient();
+  try {
+    const res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: TIME_EDIT_REQUESTS_RANGE,
+    });
+    const all = (res.data.values ?? [])
+      .filter((r) => r[0])
+      .map((r) => ({
+        requestId: String(r[0]),
+        employeeId: String(r[1] ?? ""),
+        targetDate: String(r[2] ?? ""),
+        requestedLoginTime: String(r[3] ?? ""),
+        requestedLogoutTime: String(r[4] ?? ""),
+        reason: String(r[5] ?? ""),
+        status: String(r[6] ?? "Pending") as "Pending" | "Approved" | "Rejected",
+        requestedAt: String(r[7] ?? ""),
+        reviewedAt: r[8] ? String(r[8]) : undefined,
+      }));
+    return employeeId ? all.filter((r) => r.employeeId === employeeId) : all;
+  } catch {
+    return [];
+  }
+}
+
+export async function updateTimeEditRequestStatus(
+  requestId: string,
+  status: "Approved" | "Rejected"
+): Promise<{ ok: boolean; request?: TimeEditRequest }> {
+  const sheets = getSheetsClient();
+  let res;
+  try {
+    res = await sheets.spreadsheets.values.get({
+      spreadsheetId: SPREADSHEET_ID,
+      range: TIME_EDIT_REQUESTS_RANGE,
+    });
+  } catch {
+    return { ok: false };
+  }
+  const rows = res.data.values ?? [];
+  let targetRow = -1;
+  let foundRequest: TimeEditRequest | undefined;
+  for (let i = 0; i < rows.length; i++) {
+    if (String(rows[i][0]) === requestId) {
+      targetRow = i + 2;
+      foundRequest = {
+        requestId: String(rows[i][0]),
+        employeeId: String(rows[i][1] ?? ""),
+        targetDate: String(rows[i][2] ?? ""),
+        requestedLoginTime: String(rows[i][3] ?? ""),
+        requestedLogoutTime: String(rows[i][4] ?? ""),
+        reason: String(rows[i][5] ?? ""),
+        status: String(rows[i][6] ?? "Pending") as "Pending" | "Approved" | "Rejected",
+        requestedAt: String(rows[i][7] ?? ""),
+      };
+      break;
+    }
+  }
+  if (targetRow === -1 || !foundRequest) return { ok: false };
+  await sheets.spreadsheets.values.update({
+    spreadsheetId: SPREADSHEET_ID,
+    range: `TimeEditRequests!G${targetRow}:I${targetRow}`,
+    valueInputOption: "USER_ENTERED",
+    requestBody: { values: [[status, new Date().toISOString(), ""]] },
+  });
+  return { ok: true, request: { ...foundRequest, status } };
+}
+
 export async function bulkAppendTimeEntries(
   rows: Array<[string, string, string, string, number]>
 ): Promise<void> {

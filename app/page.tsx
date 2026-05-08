@@ -5,6 +5,7 @@ import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import type { EmployeeWithLeave } from "@/lib/leave";
 import { ThemeToggle } from "@/app/components/ThemeToggle";
+import { getAustralianDate } from "@/lib/dateUtils";
 
 type LeaveFormState = {
   date: string;
@@ -64,8 +65,20 @@ type InvoiceEditRequest = {
   reviewedAt?: string;
 };
 
+type TimeEditRequestType = {
+  requestId: string;
+  employeeId: string;
+  targetDate: string;
+  requestedLoginTime: string;
+  requestedLogoutTime: string;
+  reason: string;
+  status: "Pending" | "Approved" | "Rejected";
+  requestedAt: string;
+  reviewedAt?: string;
+};
+
 function makeInitialForm(): LeaveFormState {
-  return { date: new Date().toISOString().slice(0, 10), days: "", type: "Annual", note: "", loading: false };
+  return { date: getAustralianDate(), days: "", type: "Annual", note: "", loading: false };
 }
 
 function makeInitialSchedule(): ScheduleForm {
@@ -93,11 +106,13 @@ export default function AdminPage() {
   const [savedContracts, setSavedContracts] = useState<SavedContract[]>([]);
   const [editRequests, setEditRequests] = useState<InvoiceEditRequest[]>([]);
   const [reviewingId, setReviewingId] = useState<string | null>(null);
-  const [activeTab, setActiveTab] = useState<"leave" | "schedules" | "contracts" | "editRequests" | "attendance">("leave");
+  const [timeEditRequests, setTimeEditRequests] = useState<TimeEditRequestType[]>([]);
+  const [reviewingTimeId, setReviewingTimeId] = useState<string | null>(null);
+  const [activeTab, setActiveTab] = useState<"leave" | "schedules" | "contracts" | "editRequests" | "timeEdits" | "attendance">("leave");
 
   // Attendance / manual punch state
   const [punchEmpId, setPunchEmpId] = useState("");
-  const [punchDate, setPunchDate] = useState(new Date().toISOString().slice(0, 10));
+  const [punchDate, setPunchDate] = useState(getAustralianDate());
   const [punchLogin, setPunchLogin] = useState("09:00");
   const [punchLogout, setPunchLogout] = useState("17:00");
   const [punchSaving, setPunchSaving] = useState(false);
@@ -105,11 +120,11 @@ export default function AdminPage() {
 
   // Backfill state
   const [backfillFrom, setBackfillFrom] = useState("");
-  const [backfillTo, setBackfillTo] = useState(new Date().toISOString().slice(0, 10));
+  const [backfillTo, setBackfillTo] = useState(getAustralianDate());
   const [backfillRunning, setBackfillRunning] = useState(false);
   const [backfillResult, setBackfillResult] = useState<{ inserted: number; skipped: number; workingDays: string[] } | null>(null);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getAustralianDate();
 
   useEffect(() => {
     if (status === "unauthenticated") { router.push("/login"); return; }
@@ -119,6 +134,7 @@ export default function AdminPage() {
       void fetchSchedules();
       void fetchContracts();
       void fetchEditRequests();
+      void fetchTimeEditRequests();
       // Default backfill from = current cutoff start (16th of month or 1st)
       const now = new Date();
       const day = now.getDate();
@@ -178,6 +194,25 @@ export default function AdminPage() {
       const data = await res.json() as { requests: InvoiceEditRequest[] };
       setEditRequests(data.requests);
     }
+  }
+
+  async function fetchTimeEditRequests() {
+    const res = await fetch("/api/time/edit-requests");
+    if (res.ok) {
+      const data = await res.json() as { requests: TimeEditRequestType[] };
+      setTimeEditRequests(data.requests);
+    }
+  }
+
+  async function handleReviewTimeEditRequest(requestId: string, status: "Approved" | "Rejected") {
+    setReviewingTimeId(requestId);
+    const res = await fetch("/api/time/edit-requests", {
+      method: "PATCH",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify({ requestId, status }),
+    });
+    setReviewingTimeId(null);
+    if (res.ok) void fetchTimeEditRequests();
   }
 
   async function fetchSchedules() {
@@ -405,6 +440,7 @@ export default function AdminPage() {
             { key: "schedules", label: "Schedules" },
             { key: "contracts", label: "Contracts" },
             { key: "editRequests", label: `Edit Requests${editRequests.filter(r => r.status === "Pending").length > 0 ? ` (${editRequests.filter(r => r.status === "Pending").length})` : ""}` },
+            { key: "timeEdits", label: `Time Edits${timeEditRequests.filter(r => r.status === "Pending").length > 0 ? ` (${timeEditRequests.filter(r => r.status === "Pending").length})` : ""}` },
             { key: "attendance", label: "Attendance" },
           ] as const).map(({ key, label }) => (
             <button
@@ -774,6 +810,84 @@ export default function AdminPage() {
             )}
           </section>
         )}
+        {/* ── TIME EDITS TAB ── */}
+        {activeTab === "timeEdits" && (
+          <section className="rounded-2xl bg-white p-4 shadow-sm ring-1 ring-slate-200 dark:bg-[#111] dark:border-[#333]">
+            <div className="mb-4">
+              <h2 className="text-base font-semibold">Time Edit Requests</h2>
+              <p className="mt-0.5 text-xs text-slate-400">
+                Members submit clock-in/out corrections. Approve to apply the change to TimeTracking.
+              </p>
+            </div>
+            {timeEditRequests.length === 0 ? (
+              <p className="py-4 text-center text-sm text-slate-400">No time edit requests yet.</p>
+            ) : (
+              <div className="space-y-3">
+                {timeEditRequests
+                  .sort((a, b) => {
+                    const order = { Pending: 0, Approved: 1, Rejected: 2 };
+                    return (order[a.status] - order[b.status]) || b.requestedAt.localeCompare(a.requestedAt);
+                  })
+                  .map((req) => {
+                    const emp = employees.find((e) => e.id === req.employeeId);
+                    return (
+                      <div key={req.requestId} className={`rounded-xl p-4 ring-1 ${
+                        req.status === "Pending"
+                          ? "bg-amber-50 ring-amber-200 dark:bg-amber-900/20 dark:ring-amber-800"
+                          : req.status === "Approved"
+                          ? "bg-emerald-50 ring-emerald-200 dark:bg-emerald-900/20 dark:ring-emerald-800"
+                          : "bg-slate-50 ring-slate-200 dark:bg-[#1a1a1a]/60"
+                      }`}>
+                        <div className="mb-2 flex flex-wrap items-center justify-between gap-2">
+                          <div>
+                            <span className="font-semibold text-sm">{emp?.fullName ?? req.employeeId}</span>
+                            <span className="ml-2 text-xs text-slate-400">Date: {req.targetDate}</span>
+                          </div>
+                          <span className={`rounded-full px-2.5 py-0.5 text-xs font-semibold ring-1 ${
+                            req.status === "Pending"
+                              ? "bg-amber-100 text-amber-700 ring-amber-200 dark:bg-amber-900/30 dark:text-amber-300 dark:ring-amber-800"
+                              : req.status === "Approved"
+                              ? "bg-emerald-100 text-emerald-700 ring-emerald-200 dark:bg-emerald-900/30 dark:text-emerald-300 dark:ring-emerald-800"
+                              : "bg-slate-200 text-slate-600 ring-slate-300 dark:bg-slate-700 dark:text-slate-400 dark:ring-slate-600"
+                          }`}>
+                            {req.status}
+                          </span>
+                        </div>
+                        <div className="mb-3 grid grid-cols-2 gap-2 text-xs sm:grid-cols-4">
+                          <div><span className="text-slate-400">Requested In:</span> <span className="font-mono font-semibold">{req.requestedLoginTime}</span></div>
+                          <div><span className="text-slate-400">Requested Out:</span> <span className="font-mono font-semibold">{req.requestedLogoutTime}</span></div>
+                          <div><span className="text-slate-400">Submitted:</span> <span className="font-medium">{new Date(req.requestedAt).toLocaleDateString()}</span></div>
+                          {req.reason && <div><span className="text-slate-400">Reason:</span> <span className="font-medium">{req.reason}</span></div>}
+                        </div>
+                        {req.status === "Pending" && (
+                          <div className="flex gap-2">
+                            <button
+                              disabled={reviewingTimeId === req.requestId}
+                              onClick={() => handleReviewTimeEditRequest(req.requestId, "Approved")}
+                              className="rounded-md bg-emerald-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-emerald-500 disabled:opacity-60"
+                            >
+                              {reviewingTimeId === req.requestId ? "…" : "Approve & Apply"}
+                            </button>
+                            <button
+                              disabled={reviewingTimeId === req.requestId}
+                              onClick={() => handleReviewTimeEditRequest(req.requestId, "Rejected")}
+                              className="rounded-md bg-rose-600 px-3 py-1.5 text-xs font-semibold text-white hover:bg-rose-500 disabled:opacity-60"
+                            >
+                              {reviewingTimeId === req.requestId ? "…" : "Reject"}
+                            </button>
+                          </div>
+                        )}
+                        {req.reviewedAt && (
+                          <p className="mt-1 text-[11px] text-slate-400">Reviewed: {new Date(req.reviewedAt).toLocaleString()}</p>
+                        )}
+                      </div>
+                    );
+                  })}
+              </div>
+            )}
+          </section>
+        )}
+
         {/* ── ATTENDANCE TAB ── */}
         {activeTab === "attendance" && (
           <div className="space-y-4">

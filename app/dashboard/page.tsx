@@ -3,7 +3,9 @@
 import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
+import { getPHDate } from "@/lib/dateUtils";
 import { ThemeToggle } from "@/app/components/ThemeToggle";
+import type { TimeEditRequest } from "@/lib/googleSheets";
 
 type EmployeeSchedule = {
   startTime: string;
@@ -35,6 +37,60 @@ type LeaveForm = {
   reason: string;
 };
 
+type PeriodEntry = {
+  date: string;
+  loginTime: string;
+  logoutTime: string;
+  editRequest: TimeEditRequest | null;
+};
+
+type EditForm = {
+  targetDate: string;
+  requestedLoginTime: string;
+  requestedLogoutTime: string;
+  reason: string;
+};
+
+function LiveClock() {
+  const [phTime, setPhTime] = useState("");
+  const [auTime, setAuTime] = useState("");
+
+  useEffect(() => {
+    function tick() {
+      const now = new Date();
+      const fmt = (tz: string) =>
+        new Intl.DateTimeFormat("en-GB", {
+          timeZone: tz,
+          hour: "2-digit",
+          minute: "2-digit",
+          second: "2-digit",
+          hour12: false,
+          hourCycle: "h23",
+        }).format(now);
+      setPhTime(fmt("Asia/Manila"));
+      setAuTime(fmt("Australia/Sydney"));
+    }
+    tick();
+    const id = setInterval(tick, 1000);
+    return () => clearInterval(id);
+  }, []);
+
+  return (
+    <div className="mb-4 grid grid-cols-2 gap-3">
+      <div className="rounded-xl border border-noonan-lightgray bg-white px-4 py-3 text-center dark:border-[#333] dark:bg-[#111]">
+        <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400">PH Time</p>
+        <p className="font-mono text-xl font-bold text-noonan-red">{phTime || "—"}</p>
+        <p className="mt-0.5 text-[10px] text-slate-400">Asia/Manila · UTC+8</p>
+      </div>
+      <div className="rounded-xl border border-noonan-lightgray bg-white px-4 py-3 text-center dark:border-[#333] dark:bg-[#111]">
+        <p className="mb-0.5 text-[10px] font-semibold uppercase tracking-widest text-slate-400">AU Time</p>
+        <p className="font-mono text-xl font-bold text-blue-600 dark:text-blue-400">{auTime || "—"}</p>
+        <p className="mt-0.5 text-[10px] text-slate-400">Australia/Sydney</p>
+      </div>
+    </div>
+  );
+}
+
 function StatusBadge({ label, variant }: { label: string; variant: "late" | "early" | "on_time" }) {
   const styles = {
     late: "bg-rose-100 text-rose-700 ring-rose-200 dark:bg-rose-900/30 dark:text-rose-300 dark:ring-rose-800",
@@ -57,7 +113,7 @@ export default function DashboardPage() {
   const [actionTag, setActionTag] = useState<"late" | "early" | "on_time" | null>(null);
   const [actionError, setActionError] = useState<string | null>(null);
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getPHDate();
   const [leaveForm, setLeaveForm] = useState<LeaveForm>({
     leaveDate: today,
     days: "1",
@@ -66,6 +122,18 @@ export default function DashboardPage() {
   });
   const [leaveSubmitting, setLeaveSubmitting] = useState(false);
   const [leaveMessage, setLeaveMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
+
+  // Period entries + edit request state
+  const [periodEntries, setPeriodEntries] = useState<PeriodEntry[]>([]);
+  const [editingDate, setEditingDate] = useState<string | null>(null);
+  const [editForm, setEditForm] = useState<EditForm>({
+    targetDate: "",
+    requestedLoginTime: "",
+    requestedLogoutTime: "",
+    reason: "",
+  });
+  const [editSubmitting, setEditSubmitting] = useState(false);
+  const [editMessage, setEditMessage] = useState<{ type: "success" | "error"; text: string } | null>(null);
 
   const user = session?.user as { role?: string; employeeId?: string; name?: string } | undefined;
   const name = user?.name ?? "there";
@@ -79,6 +147,7 @@ export default function DashboardPage() {
     if (status === "authenticated" && user?.role === "member") {
       void fetchStatus();
       void fetchSummary();
+      void fetchPeriodEntries();
     }
   }, [status, user]);
 
@@ -90,15 +159,23 @@ export default function DashboardPage() {
   async function fetchSummary() {
     const res = await fetch("/api/invoice/current");
     if (res.ok) {
-      const data = await res.json() as { payslip?: { hoursRendered: number; cutoff: { from: string; to: string } } };
+      const data = await res.json() as { payslip?: { actualDaysWorked?: number; hoursRendered: number; cutoff: { from: string; to: string } } };
       if (data.payslip) {
         setSummary({
-          daysWorked: Math.round((data.payslip.hoursRendered / 7.5) * 10) / 10,
+          daysWorked: data.payslip.actualDaysWorked ?? Math.round((data.payslip.hoursRendered / 7.5) * 10) / 10,
           hoursWorked: data.payslip.hoursRendered,
           periodFrom: data.payslip.cutoff.from,
           periodTo: data.payslip.cutoff.to,
         });
       }
+    }
+  }
+
+  async function fetchPeriodEntries() {
+    const res = await fetch("/api/time/entries");
+    if (res.ok) {
+      const data = await res.json() as { entries: PeriodEntry[] };
+      setPeriodEntries(data.entries);
     }
   }
 
@@ -114,6 +191,7 @@ export default function DashboardPage() {
       else if (data.attendanceStatus === "on_time") setActionTag("on_time");
       void fetchStatus();
       void fetchSummary();
+      void fetchPeriodEntries();
     } else {
       setActionError(data.error ?? "Failed to clock in");
     }
@@ -131,8 +209,40 @@ export default function DashboardPage() {
       else if (data.departureStatus === "on_time") setActionTag("on_time");
       void fetchStatus();
       void fetchSummary();
+      void fetchPeriodEntries();
     } else {
       setActionError(data.error ?? "Failed to clock out");
+    }
+  }
+
+  function openEditForm(entry: PeriodEntry) {
+    setEditingDate(entry.date);
+    setEditForm({
+      targetDate: entry.date,
+      requestedLoginTime: entry.loginTime,
+      requestedLogoutTime: entry.logoutTime || "",
+      reason: "",
+    });
+    setEditMessage(null);
+  }
+
+  async function handleSubmitEditRequest(e: React.FormEvent) {
+    e.preventDefault();
+    setEditSubmitting(true);
+    setEditMessage(null);
+    const res = await fetch("/api/time/request-edit", {
+      method: "POST",
+      headers: { "Content-Type": "application/json" },
+      body: JSON.stringify(editForm),
+    });
+    const data = await res.json() as { error?: string };
+    setEditSubmitting(false);
+    if (res.ok) {
+      setEditMessage({ type: "success", text: "Request submitted! Awaiting admin review." });
+      setEditingDate(null);
+      void fetchPeriodEntries();
+    } else {
+      setEditMessage({ type: "error", text: data.error ?? "Failed to submit" });
     }
   }
 
@@ -194,6 +304,9 @@ export default function DashboardPage() {
           </div>
         </header>
 
+        {/* Live dual clock */}
+        <LiveClock />
+
         {/* ── Persistent welcome / goodbye banner ── */}
         {clockStatus.status === "clocked_in" && clockStatus.loginTime && (
           <div className="mb-4 rounded-2xl bg-noonan-red px-6 py-5 text-center shadow-md">
@@ -237,7 +350,7 @@ export default function DashboardPage() {
           </div>
         )}
 
-        {/* Cutoff day banner (only when not clocked in yet) */}
+        {/* Cutoff day banner */}
         {clockStatus.status === "not_clocked_in" && clockStatus.isCutoffDay && (
           <div className="mb-4 rounded-xl bg-amber-50 px-4 py-3 text-sm text-amber-800 ring-1 ring-amber-200 dark:bg-amber-900/20 dark:text-amber-200 dark:ring-amber-800">
             Today is a cutoff day (15th / end of month). Clock out to unlock your invoice.
@@ -252,7 +365,6 @@ export default function DashboardPage() {
             Today&apos;s Attendance
           </h2>
 
-          {/* Scheduled hours */}
           {clockStatus.schedule && (
             <div className="mb-3 flex items-center gap-2 rounded-lg border border-noonan-lightgray bg-noonan-cream px-3 py-2 text-xs dark:border-[#333] dark:bg-[#1a1a1a]">
               <span className="text-slate-500">Schedule:</span>
@@ -263,7 +375,6 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Times display */}
           <div className="mb-4 grid grid-cols-2 gap-3">
             <div className="border border-noonan-lightgray bg-noonan-cream p-3 dark:border-[#333] dark:bg-[#1a1a1a]">
               <span className="block text-[11px] font-semibold uppercase tracking-wide text-slate-400">Clock In</span>
@@ -295,14 +406,12 @@ export default function DashboardPage() {
             </div>
           </div>
 
-          {/* Action error */}
           {actionError && (
             <p className="mb-3 rounded-lg bg-rose-50 px-3 py-2 text-xs text-rose-600 ring-1 ring-rose-200 dark:bg-rose-900/20 dark:text-rose-300 dark:ring-rose-800">
               {actionError}
             </p>
           )}
 
-          {/* Tag shown right after action */}
           {actionTag && (
             <div className="mb-3 flex justify-center">
               <StatusBadge
@@ -312,7 +421,6 @@ export default function DashboardPage() {
             </div>
           )}
 
-          {/* Action buttons */}
           <div className="flex gap-3">
             {clockStatus.status === "not_clocked_in" && (
               <button onClick={handleClockIn} disabled={actionLoading}
@@ -335,7 +443,7 @@ export default function DashboardPage() {
         </section>
 
         {/* Current period + invoice */}
-        <section className="rounded-2xl border border-noonan-lightgray bg-white p-6 dark:border-[#333] dark:bg-[#111]">
+        <section className="mb-4 rounded-2xl border border-noonan-lightgray bg-white p-6 dark:border-[#333] dark:bg-[#111]">
           <h2 className="mb-1 text-xs font-semibold uppercase tracking-wider text-slate-400">Current Period</h2>
           {summary ? (
             <>
@@ -347,7 +455,7 @@ export default function DashboardPage() {
                 </div>
                 <div className="rounded-xl bg-slate-50 p-3 text-center dark:bg-slate-800">
                   <span className="block text-2xl font-bold text-emerald-600 dark:text-emerald-400">{summary.hoursWorked}h</span>
-                  <span className="text-xs text-slate-400">Hours rendered</span>
+                  <span className="text-xs text-slate-400">Hours logged</span>
                 </div>
               </div>
             </>
@@ -362,6 +470,90 @@ export default function DashboardPage() {
           </button>
         </section>
 
+        {/* Period time entries with edit request */}
+        {periodEntries.length > 0 && (
+          <section className="mb-4 rounded-2xl border border-noonan-lightgray bg-white p-6 dark:border-[#333] dark:bg-[#111]">
+            <h2 className="mb-3 text-xs font-semibold uppercase tracking-wider text-slate-400">
+              This Period — Clock Records
+            </h2>
+            <div className="space-y-2">
+              {periodEntries.map((entry) => {
+                const hasPending = entry.editRequest?.status === "Pending";
+                const hasApproved = entry.editRequest?.status === "Approved";
+                const isEditing = editingDate === entry.date;
+                return (
+                  <div key={entry.date}>
+                    <div className="flex items-center gap-3 rounded-lg border border-noonan-lightgray bg-noonan-cream px-3 py-2 dark:border-[#333] dark:bg-[#1a1a1a]">
+                      <span className="w-24 font-mono text-xs text-slate-500">{entry.date}</span>
+                      <span className="font-mono text-xs font-semibold text-slate-700 dark:text-slate-300">
+                        {entry.loginTime} → {entry.logoutTime || "—"}
+                      </span>
+                      <div className="ml-auto flex items-center gap-2">
+                        {hasPending && (
+                          <span className="rounded-full bg-amber-100 px-2 py-0.5 text-[10px] font-semibold text-amber-700 dark:bg-amber-900/30 dark:text-amber-300">
+                            Edit Pending
+                          </span>
+                        )}
+                        {hasApproved && (
+                          <span className="rounded-full bg-emerald-100 px-2 py-0.5 text-[10px] font-semibold text-emerald-700 dark:bg-emerald-900/30 dark:text-emerald-300">
+                            Edited
+                          </span>
+                        )}
+                        {!hasPending && (
+                          <button
+                            onClick={() => isEditing ? setEditingDate(null) : openEditForm(entry)}
+                            className="rounded-md bg-slate-200 px-2 py-1 text-[11px] font-medium text-slate-600 hover:bg-slate-300 dark:bg-slate-700 dark:text-slate-300 dark:hover:bg-slate-600"
+                          >
+                            {isEditing ? "Cancel" : "Request Edit"}
+                          </button>
+                        )}
+                      </div>
+                    </div>
+
+                    {/* Inline edit form */}
+                    {isEditing && (
+                      <form onSubmit={handleSubmitEditRequest} className="mt-1 rounded-lg border border-blue-200 bg-blue-50 p-3 dark:border-blue-800 dark:bg-blue-900/20">
+                        <p className="mb-2 text-[11px] font-semibold text-blue-700 dark:text-blue-300">
+                          Request correction for {entry.date}
+                        </p>
+                        <div className="grid grid-cols-2 gap-2">
+                          <div>
+                            <label className="mb-0.5 block text-[10px] font-medium text-slate-500">Clock In</label>
+                            <input type="time" required value={editForm.requestedLoginTime}
+                              onChange={(e) => setEditForm((f) => ({ ...f, requestedLoginTime: e.target.value }))}
+                              className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-slate-900" />
+                          </div>
+                          <div>
+                            <label className="mb-0.5 block text-[10px] font-medium text-slate-500">Clock Out</label>
+                            <input type="time" required value={editForm.requestedLogoutTime}
+                              onChange={(e) => setEditForm((f) => ({ ...f, requestedLogoutTime: e.target.value }))}
+                              className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-slate-900" />
+                          </div>
+                        </div>
+                        <div className="mt-2">
+                          <label className="mb-0.5 block text-[10px] font-medium text-slate-500">Reason</label>
+                          <input type="text" value={editForm.reason} placeholder="e.g. forgot to clock out"
+                            onChange={(e) => setEditForm((f) => ({ ...f, reason: e.target.value }))}
+                            className="w-full rounded-md border border-slate-300 bg-white px-2 py-1 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-slate-900" />
+                        </div>
+                        <button type="submit" disabled={editSubmitting}
+                          className="mt-2 rounded-md bg-noonan-red px-3 py-1.5 text-xs font-semibold text-white hover:bg-noonan-red-dark disabled:opacity-60">
+                          {editSubmitting ? "Submitting…" : "Submit Request"}
+                        </button>
+                        {editMessage && (
+                          <p className={`mt-1.5 text-[11px] ${editMessage.type === "success" ? "text-emerald-600" : "text-rose-500"}`}>
+                            {editMessage.text}
+                          </p>
+                        )}
+                      </form>
+                    )}
+                  </div>
+                );
+              })}
+            </div>
+          </section>
+        )}
+
         {/* Leave Request */}
         <section className="mt-4 rounded-2xl border border-noonan-lightgray bg-white p-6 dark:border-[#333] dark:bg-[#111]">
           <h2 className="mb-4 text-xs font-semibold uppercase tracking-wider text-slate-400">
@@ -372,33 +564,22 @@ export default function DashboardPage() {
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Leave Date</label>
                 <input
-                  type="date"
-                  required
-                  value={leaveForm.leaveDate}
+                  type="date" required value={leaveForm.leaveDate}
                   onChange={(e) => setLeaveForm((f) => ({ ...f, leaveDate: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-slate-950"
-                />
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-slate-950" />
               </div>
               <div>
                 <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Days</label>
                 <input
-                  type="number"
-                  min={0.5}
-                  step={0.5}
-                  required
-                  value={leaveForm.days}
+                  type="number" min={0.5} step={0.5} required value={leaveForm.days}
                   onChange={(e) => setLeaveForm((f) => ({ ...f, days: e.target.value }))}
-                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-slate-950"
-                />
+                  className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-slate-950" />
               </div>
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Leave Type</label>
-              <select
-                value={leaveForm.type}
-                onChange={(e) => setLeaveForm((f) => ({ ...f, type: e.target.value }))}
-                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-slate-950"
-              >
+              <select value={leaveForm.type} onChange={(e) => setLeaveForm((f) => ({ ...f, type: e.target.value }))}
+                className="w-full rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-slate-950">
                 <option>Annual</option>
                 <option>Sick</option>
                 <option>Unpaid</option>
@@ -407,19 +588,13 @@ export default function DashboardPage() {
             </div>
             <div>
               <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Reason</label>
-              <textarea
-                rows={2}
-                value={leaveForm.reason}
+              <textarea rows={2} value={leaveForm.reason}
                 onChange={(e) => setLeaveForm((f) => ({ ...f, reason: e.target.value }))}
                 placeholder="Optional reason…"
-                className="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-slate-950"
-              />
+                className="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-2 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-slate-950" />
             </div>
-            <button
-              type="submit"
-              disabled={leaveSubmitting}
-              className="rounded-lg bg-noonan-red py-2.5 text-sm font-semibold text-white hover:bg-noonan-red-dark disabled:opacity-60"
-            >
+            <button type="submit" disabled={leaveSubmitting}
+              className="rounded-lg bg-noonan-red py-2.5 text-sm font-semibold text-white hover:bg-noonan-red-dark disabled:opacity-60">
               {leaveSubmitting ? "Submitting…" : "Submit Leave Request"}
             </button>
             {leaveMessage && (

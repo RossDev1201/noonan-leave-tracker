@@ -9,7 +9,7 @@ import {
   getEditRequestForPeriod,
   getScheduleForEmployee,
 } from "@/lib/googleSheets";
-import { getCurrentCutoff } from "@/lib/cutoff";
+import { getCurrentCutoff, getCutoffForDate } from "@/lib/cutoff";
 import { buildPayslipData } from "@/lib/payslip";
 
 export const dynamic = "force-dynamic";
@@ -30,7 +30,11 @@ export async function GET(req: Request) {
   }
   if (!employeeId) return NextResponse.json({ error: "employeeId required" }, { status: 400 });
 
-  const cutoff = getCurrentCutoff();
+  const periodFrom = searchParams.get("periodFrom");
+  const periodTo = searchParams.get("periodTo");
+  const cutoff = (periodFrom && periodTo)
+    ? { ...getCutoffForDate(periodFrom), from: periodFrom, to: periodTo }
+    : getCurrentCutoff();
   const [employees, entries, saved, contractConfig, editRequest, schedule] = await Promise.all([
     fetchEmployeesFromSheet(),
     getTimeEntriesForEmployee(employeeId),

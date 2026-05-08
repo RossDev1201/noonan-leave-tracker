@@ -3,7 +3,8 @@
 import { useSession } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState, useCallback } from "react";
-import { formatPeso, isCutoffDay } from "@/lib/cutoff";
+import { formatPeso, getRecentCutoffs } from "@/lib/cutoff";
+import type { CutoffPeriod } from "@/lib/cutoff";
 import type { PayslipData } from "@/lib/payslip";
 import { ThemeToggle } from "@/app/components/ThemeToggle";
 import type { InvoiceEditRequest } from "@/lib/googleSheets";
@@ -59,15 +60,25 @@ export default function InvoicePage() {
 
   const isAdmin = user?.role === "admin";
   const isMember = user?.role === "member";
-  const onCutoff = isCutoffDay();
-  const canAdminEdit = isAdmin && onCutoff && !data?.isFinalized;
+
+  // Admin can always finalize (no cutoff day restriction)
+  const canAdminEdit = isAdmin && !data?.isFinalized;
   const canMemberEdit = isMember;
 
   const [adminEmpId, setAdminEmpId] = useState("");
 
-  const fetchInvoice = useCallback(async (empId?: string) => {
+  // Period selector — admin can view/finalize past periods
+  const recentCutoffs: CutoffPeriod[] = getRecentCutoffs(6);
+  const [selectedPeriod, setSelectedPeriod] = useState<string>("");  // "from|to"
+
+  const activeCutoff = selectedPeriod
+    ? recentCutoffs.find((c) => `${c.from}|${c.to}` === selectedPeriod) ?? recentCutoffs[0]
+    : recentCutoffs[0];
+
+  const fetchInvoice = useCallback(async (empId?: string, cutoff?: CutoffPeriod) => {
     setLoading(true);
-    const url = empId ? `/api/invoice/current?employeeId=${empId}` : "/api/invoice/current";
+    let url = empId ? `/api/invoice/current?employeeId=${empId}` : "/api/invoice/current";
+    if (cutoff) url += `${url.includes("?") ? "&" : "?"}periodFrom=${cutoff.from}&periodTo=${cutoff.to}`;
     const res = await fetch(url);
     if (res.ok) {
       const json = await res.json() as InvoiceResponse;
@@ -82,17 +93,21 @@ export default function InvoicePage() {
   useEffect(() => {
     if (status === "unauthenticated") { router.push("/login"); return; }
     if (status === "authenticated") {
-      if (isAdmin) { if (adminEmpId) void fetchInvoice(adminEmpId); }
-      else void fetchInvoice();
+      if (isAdmin) {
+        if (adminEmpId) void fetchInvoice(adminEmpId, activeCutoff);
+      } else {
+        void fetchInvoice(undefined, activeCutoff);
+      }
     }
-  }, [status, isAdmin, adminEmpId, fetchInvoice, router]);
+  }, [status, isAdmin, adminEmpId, selectedPeriod, fetchInvoice, router]);
 
   function getPreviewPayslip(): PayslipData | null {
     if (!data?.payslip) return null;
     const p = data.payslip;
     const claimed = Number(hoursClaimed) || 0;
     const leavD = Number(leaveDays) || 0;
-    const leaveDeductions = leavD * p.hourlyRate * 7.5;
+    const baseHourlyRate = p.contractValue > 0 ? p.contractValue / 150 : p.hourlyRate;
+    const leaveDeductions = leavD * baseHourlyRate * 7.5;
     const totalEarnings = p.recepTaskPay + p.internetFee + p.medicalFee - leaveDeductions - p.attendanceDeductions + p.overtimePay;
     const timeBankBalance = Math.round((p.timeBankTotal - claimed) * 100) / 100;
     return { ...p, hoursClaimed: claimed, leaveDaysTaken: leavD, leaveDeductions, totalEarnings, timeBankBalance, notes };
@@ -106,12 +121,18 @@ export default function InvoicePage() {
     const res = await fetch("/api/invoice/save", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({ employeeId, leaveDaysTaken: Number(leaveDays), notes }),
+      body: JSON.stringify({
+        employeeId,
+        leaveDaysTaken: Number(leaveDays),
+        notes,
+        periodFrom: activeCutoff.from,
+        periodTo: activeCutoff.to,
+      }),
     });
     const json = await res.json() as { error?: string };
     if (res.ok) {
       setMessage({ type: "success", text: "Payslip finalized and saved." });
-      void fetchInvoice(isAdmin ? data.payslip.employeeId : undefined);
+      void fetchInvoice(isAdmin ? data.payslip.employeeId : undefined, activeCutoff);
       setEditMode(false);
     } else {
       setMessage({ type: "error", text: json.error ?? "Failed to save" });
@@ -125,16 +146,13 @@ export default function InvoicePage() {
     const res = await fetch("/api/invoice/submit-edit", {
       method: "POST",
       headers: { "Content-Type": "application/json" },
-      body: JSON.stringify({
-        hoursClaimed: Number(hoursClaimed) || 0,
-        notes,
-      }),
+      body: JSON.stringify({ hoursClaimed: Number(hoursClaimed) || 0, notes }),
     });
     const json = await res.json() as { error?: string };
     setSubmitting(false);
     if (res.ok) {
       setMessage({ type: "success", text: "Edit request submitted! Awaiting admin approval." });
-      void fetchInvoice();
+      void fetchInvoice(undefined, activeCutoff);
     } else {
       setMessage({ type: "error", text: json.error ?? "Failed to submit request" });
     }
@@ -156,11 +174,7 @@ export default function InvoicePage() {
   const editRequest = data?.editRequest ?? null;
   const editStatus = editRequest?.status ?? null;
 
-  // Members can download only if their edit request is approved
-  // Admins can always download
   const memberCanDownload = isAdmin || editStatus === "Approved";
-
-  // Members can submit if: no request yet, or previous request was rejected
   const memberCanSubmit = isMember && (editStatus === null || editStatus === "Rejected");
 
   return (
@@ -169,28 +183,34 @@ export default function InvoicePage() {
 
         {/* Nav */}
         <div className="print:hidden mb-6 flex flex-wrap items-center justify-between gap-3">
-          <button
-            onClick={() => router.push(isAdmin ? "/" : "/dashboard")}
-            className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200"
-          >
+          <button onClick={() => router.push(isAdmin ? "/" : "/dashboard")}
+            className="text-xs text-slate-500 hover:text-slate-700 dark:text-slate-400 dark:hover:text-slate-200">
             ← Back
           </button>
           <div className="flex flex-wrap items-center gap-2">
             <ThemeToggle />
-            <button
-              onClick={() => router.push("/history")}
-              className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700"
-            >
+            <button onClick={() => router.push("/history")}
+              className="rounded-lg bg-slate-200 px-3 py-1.5 text-xs font-medium text-slate-700 hover:bg-slate-300 dark:bg-slate-800 dark:text-slate-300 dark:hover:bg-slate-700">
               History
             </button>
+
+            {/* Period selector */}
+            <select
+              value={selectedPeriod}
+              onChange={(e) => { setSelectedPeriod(e.target.value); setData(null); }}
+              className="rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-noonan-red dark:border-slate-700 dark:bg-slate-900"
+            >
+              {recentCutoffs.map((c, i) => (
+                <option key={c.from} value={`${c.from}|${c.to}`}>
+                  {i === 0 ? "Current: " : ""}{c.label}
+                </option>
+              ))}
+            </select>
+
             {isAdmin && (
-              <input
-                type="text"
-                placeholder="Employee ID"
-                value={adminEmpId}
+              <input type="text" placeholder="Employee ID" value={adminEmpId}
                 onChange={(e) => setAdminEmpId(e.target.value)}
-                className="w-36 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-900"
-              />
+                className="w-36 rounded-lg border border-slate-300 bg-white px-2 py-1.5 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-900" />
             )}
           </div>
         </div>
@@ -217,19 +237,13 @@ export default function InvoicePage() {
                       Submitted {new Date(editRequest.requestedAt).toLocaleString()}
                     </p>
                     {editStatus === "Rejected" && (
-                      <p className="mt-1 text-xs text-rose-600 dark:text-rose-400">
-                        Your request was rejected. You may edit and resubmit below.
-                      </p>
+                      <p className="mt-1 text-xs text-rose-600 dark:text-rose-400">Your request was rejected. You may edit and resubmit below.</p>
                     )}
                     {editStatus === "Approved" && (
-                      <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">
-                        Your edits have been approved. You can now download your invoice.
-                      </p>
+                      <p className="mt-1 text-xs text-emerald-600 dark:text-emerald-400">Your edits have been approved. You can now download your invoice.</p>
                     )}
                     {editStatus === "Pending" && (
-                      <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">
-                        Waiting for Sheehan to review your submission.
-                      </p>
+                      <p className="mt-1 text-xs text-amber-600 dark:text-amber-400">Waiting for Sheehan to review your submission.</p>
                     )}
                   </div>
                   <EditRequestBadge status={editRequest.status} />
@@ -252,13 +266,11 @@ export default function InvoicePage() {
                         <span className="ml-1 font-normal text-slate-400">(max: {data.payslip.timeBankTotal})</span>
                       )}
                     </label>
-                    <input
-                      type="number" min={0} step={0.5}
+                    <input type="number" min={0} step={0.5}
                       max={data?.payslip?.timeBankTotal ?? undefined}
                       value={hoursClaimed}
                       onChange={(e) => setHoursClaimed(e.target.value)}
-                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950"
-                    />
+                      className="w-full rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950" />
                   </div>
                   <div className="sm:col-span-2">
                     <label className="mb-1 block text-xs font-medium text-slate-500 dark:text-slate-400">Notes</label>
@@ -267,11 +279,8 @@ export default function InvoicePage() {
                   </div>
                 </div>
                 <div className="mt-4 flex items-center gap-3">
-                  <button
-                    onClick={handleSubmitEditRequest}
-                    disabled={submitting}
-                    className="rounded-lg bg-navy-700 px-5 py-2 text-sm font-semibold text-white hover:bg-navy-600 disabled:opacity-60"
-                  >
+                  <button onClick={handleSubmitEditRequest} disabled={submitting}
+                    className="rounded-lg bg-navy-700 px-5 py-2 text-sm font-semibold text-white hover:bg-navy-600 disabled:opacity-60">
                     {submitting ? "Submitting…" : "Submit for Approval"}
                   </button>
                   {editStatus === "Rejected" && (
@@ -297,7 +306,7 @@ export default function InvoicePage() {
             {/* Invoice document */}
             <div className="overflow-hidden rounded-2xl shadow-xl" style={{ background: "#fef6e4" }}>
 
-              {/* Header: logo left, invoice meta right — cream bg with red bottom border */}
+              {/* Header */}
               <div className="flex items-start justify-between px-6 py-5 border-b-4 border-noonan-red" style={{ background: "#fef6e4" }}>
                 <div>
                   <img src="/noonan-logo-red.svg" alt="Noonan Real Estate Agency" className="h-14 w-auto" />
@@ -324,8 +333,8 @@ export default function InvoicePage() {
                     <div className="border-r border-noonan-gray/30 px-4 py-2 space-y-1">
                       <div className="text-xs"><span className="text-noonan-gray">Payment Period:</span>{" "}<span className="font-semibold text-slate-800">{p.cutoff.label}</span></div>
                       <div className="text-xs"><span className="text-noonan-gray">Payment Due Date:</span>{" "}<span className="font-medium text-slate-800">{toDisplayDate(p.cutoff.dueDate)}</span></div>
-                      <div className="text-xs"><span className="text-noonan-gray">Hours Rendered:</span>{" "}<span className="font-medium text-slate-800">{p.hoursRendered} hours</span></div>
-                      <div className="text-xs"><span className="text-noonan-gray">Hours Awarded for cut off:</span>{" "}<span className="font-medium text-slate-800">{p.hoursAwarded} hours</span></div>
+                      <div className="text-xs"><span className="text-noonan-gray">Hours Logged:</span>{" "}<span className="font-medium text-slate-800">{p.hoursRendered}h ({p.actualDaysWorked} days)</span></div>
+                      <div className="text-xs text-noonan-gray/70"><span className="text-noonan-gray">Expected to Date:</span>{" "}<span className="font-medium text-slate-700">{p.hoursAwarded}h ({p.expectedDaysToDate} days)</span></div>
                     </div>
                     <div className="px-4 py-2 space-y-1">
                       <div className="text-xs"><span className="text-noonan-gray">Service Provider:</span>{" "}<span className="font-semibold text-slate-800">{p.employeeName}</span></div>
@@ -350,8 +359,8 @@ export default function InvoicePage() {
                   <tbody className="divide-y divide-noonan-gray/20">
                     <tr>
                       <td className="px-3 py-2 text-slate-800">Recep Task</td>
-                      <td className="px-3 py-2 text-noonan-gray text-[11px]">½ of contract value</td>
-                      <td className="px-3 py-2 text-right font-mono text-slate-800">{p.hoursAwarded}</td>
+                      <td className="px-3 py-2 text-noonan-gray text-[11px]">prorated ({p.actualDaysWorked} of {p.expectedDaysToDate} days)</td>
+                      <td className="px-3 py-2 text-right font-mono text-slate-800">{p.hoursRendered}</td>
                       <td className="px-3 py-2 text-right font-mono text-slate-800">{formatPeso(p.hourlyRate)}</td>
                       <td className="px-3 py-2 text-right font-mono font-semibold text-slate-800">{formatPeso(p.recepTaskPay)}</td>
                     </tr>
@@ -370,7 +379,7 @@ export default function InvoicePage() {
                     {p.overtimePay > 0 && (
                       <tr className="bg-emerald-50">
                         <td className="px-3 py-2 text-emerald-700">Overtime Pay</td>
-                        <td className="px-3 py-2 text-emerald-600 text-[11px]">{p.otHours}h approved OT</td>
+                        <td className="px-3 py-2 text-emerald-600 text-[11px]">{p.otHours}h OT (≥1h past schedule)</td>
                         <td className="px-3 py-2 text-right font-mono text-emerald-700">{p.otHours}</td>
                         <td className="px-3 py-2 text-right font-mono text-emerald-700">{formatPeso(p.hourlyRate)}</td>
                         <td className="px-3 py-2 text-right font-mono font-semibold text-emerald-700">+{formatPeso(p.overtimePay)}</td>
@@ -441,14 +450,12 @@ export default function InvoicePage() {
 
               {/* Status bar */}
               <div className={`print:hidden flex items-center gap-2 px-6 py-3 text-xs font-medium ${
-                data?.isFinalized
-                  ? "bg-emerald-50 text-emerald-700"
-                  : "bg-amber-50 text-amber-700"
+                data?.isFinalized ? "bg-emerald-50 text-emerald-700" : "bg-amber-50 text-amber-700"
               }`}>
                 <div className={`h-2 w-2 rounded-full ${data?.isFinalized ? "bg-emerald-500" : "bg-amber-500"}`} />
                 {data?.isFinalized
                   ? `Finalized — saved ${data.savedAt ? new Date(data.savedAt).toLocaleString() : ""}`
-                  : "Draft — not yet finalized"}
+                  : `Draft — ${activeCutoff.label}`}
               </div>
             </div>
 
@@ -461,11 +468,8 @@ export default function InvoicePage() {
                     : "Submit your edits above for admin approval to print."}
                 </p>
               )}
-              <button
-                onClick={handleDownloadPdf}
-                disabled={!memberCanDownload}
-                className="flex items-center gap-2 rounded-lg bg-navy-700 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-navy-600 disabled:cursor-not-allowed disabled:opacity-40"
-              >
+              <button onClick={handleDownloadPdf} disabled={!memberCanDownload}
+                className="flex items-center gap-2 rounded-lg bg-navy-700 px-5 py-2.5 text-sm font-semibold text-white shadow hover:bg-navy-600 disabled:cursor-not-allowed disabled:opacity-40">
                 🖨 Print / Save as PDF
               </button>
             </div>
@@ -480,47 +484,46 @@ export default function InvoicePage() {
             {/* Admin controls */}
             {isAdmin && (
               <div className="print:hidden mt-4 rounded-2xl bg-white p-5 shadow-sm ring-1 ring-slate-200 dark:bg-slate-900 dark:ring-slate-800">
-                <h3 className="mb-3 text-sm font-semibold text-slate-700 dark:text-slate-300">Admin Controls</h3>
+                <h3 className="mb-1 text-sm font-semibold text-slate-700 dark:text-slate-300">Admin Controls</h3>
+                <p className="mb-3 text-xs text-slate-400">Period: {activeCutoff.label}</p>
 
-                {!data?.isFinalized && (
+                {!data?.isFinalized ? (
                   <>
-                    {canAdminEdit ? (
-                      <>
-                        <button onClick={() => setEditMode((v) => !v)}
-                          className="mb-3 text-xs text-navy-600 underline dark:text-navy-300">
-                          {editMode ? "Cancel edit" : "Edit leave deductions"}
-                        </button>
-                        {editMode && (
-                          <div className="mb-4 space-y-3">
-                            <div>
-                              <label className="mb-1 block text-xs text-slate-400">Leave days taken this period</label>
-                              <input type="number" min={0} step={0.5} value={leaveDays} onChange={(e) => setLeaveDays(e.target.value)}
-                                className="w-32 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950" />
-                              {Number(leaveDays) > 0 && p && (
-                                <p className="mt-1 text-[11px] text-amber-500">
-                                  Deduction: {formatPeso(Number(leaveDays) * p.hourlyRate * 7.5)}
-                                </p>
-                              )}
-                            </div>
-                            <div>
-                              <label className="mb-1 block text-xs text-slate-400">Notes</label>
-                              <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
-                                className="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950" />
-                            </div>
-                          </div>
-                        )}
-                        <button onClick={handleFinalize} disabled={saving}
-                          className="rounded-lg bg-navy-700 px-4 py-2 text-sm font-semibold text-white hover:bg-navy-600 disabled:opacity-50">
-                          {saving ? "Saving…" : "Finalize & Save Payslip"}
-                        </button>
-                      </>
-                    ) : (
-                      <p className="text-xs text-slate-500">Finalization is only available on cutoff days (15th or last day of month).</p>
+                    <button onClick={() => setEditMode((v) => !v)}
+                      className="mb-3 text-xs text-navy-600 underline dark:text-navy-300">
+                      {editMode ? "Cancel edit" : "Edit leave deductions"}
+                    </button>
+                    {editMode && (
+                      <div className="mb-4 space-y-3">
+                        <div>
+                          <label className="mb-1 block text-xs text-slate-400">Leave days taken this period</label>
+                          <input type="number" min={0} step={0.5} value={leaveDays}
+                            onChange={(e) => setLeaveDays(e.target.value)}
+                            className="w-32 rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-sm outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950" />
+                          {Number(leaveDays) > 0 && p && (
+                            <p className="mt-1 text-[11px] text-amber-500">
+                              Deduction: {formatPeso(Number(leaveDays) * (p.contractValue / 150) * 7.5)}
+                            </p>
+                          )}
+                        </div>
+                        <div>
+                          <label className="mb-1 block text-xs text-slate-400">Notes</label>
+                          <textarea rows={2} value={notes} onChange={(e) => setNotes(e.target.value)}
+                            className="w-full resize-none rounded-lg border border-slate-300 bg-white px-3 py-1.5 text-xs outline-none focus:border-navy-700 dark:border-slate-700 dark:bg-slate-950" />
+                        </div>
+                      </div>
+                    )}
+                    <button onClick={handleFinalize} disabled={saving}
+                      className="rounded-lg bg-navy-700 px-4 py-2 text-sm font-semibold text-white hover:bg-navy-600 disabled:opacity-50">
+                      {saving ? "Saving…" : "Finalize & Save Payslip"}
+                    </button>
+                    {message && (
+                      <p className={`mt-2 text-xs ${message.type === "success" ? "text-emerald-600" : "text-rose-500"}`}>
+                        {message.text}
+                      </p>
                     )}
                   </>
-                )}
-
-                {data?.isFinalized && (
+                ) : (
                   <div>
                     <p className="mb-2 text-xs text-emerald-600 dark:text-emerald-400">This payslip is finalized.</p>
                     <button onClick={() => setEditMode((v) => !v)} className="text-xs text-navy-600 underline dark:text-navy-300">
@@ -530,7 +533,7 @@ export default function InvoicePage() {
                       <FinalizedLeaveEdit
                         payslipId={p.payslipId}
                         currentDays={p.leaveDaysTaken}
-                        onSaved={() => { setEditMode(false); void fetchInvoice(isAdmin ? p.employeeId : undefined); }}
+                        onSaved={() => { setEditMode(false); void fetchInvoice(isAdmin ? p.employeeId : undefined, activeCutoff); }}
                       />
                     )}
                   </div>

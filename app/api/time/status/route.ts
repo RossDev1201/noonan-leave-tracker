@@ -3,6 +3,7 @@ import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getTodayStatus, getScheduleForEmployee } from "@/lib/googleSheets";
 import { isCutoffDay } from "@/lib/cutoff";
+import { getPHDate } from "@/lib/dateUtils";
 
 export const dynamic = "force-dynamic";
 
@@ -19,7 +20,7 @@ export async function GET() {
   const employeeId = user.employeeId;
   if (!employeeId) return NextResponse.json({ error: "No employee ID on session" }, { status: 400 });
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getPHDate();
   const clockStatus = await getTodayStatus(employeeId, today);
   const schedule = await getScheduleForEmployee(employeeId);
 

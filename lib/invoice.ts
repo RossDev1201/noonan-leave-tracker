@@ -1,5 +1,6 @@
 import { PDFDocument, rgb, StandardFonts } from "pdf-lib";
 import type { TimeEntry } from "./googleSheets";
+import { getAustralianDate } from "./dateUtils";
 
 export type InvoiceData = {
   invoiceNumber: string;
@@ -40,7 +41,7 @@ export function buildInvoiceData(
 
   return {
     invoiceNumber: `INV-${employeeId}-${month.replace("-", "")}`,
-    invoiceDate: new Date().toISOString().slice(0, 10),
+    invoiceDate: getAustralianDate(),
     periodFrom: `${month}-01`,
     periodTo: `${month}-${String(lastDay).padStart(2, "0")}`,
     employeeId,

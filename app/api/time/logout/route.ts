@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { getTodayStatus, recordLogout, getScheduleForEmployee } from "@/lib/googleSheets";
+import { getPHDate, getPHTime } from "@/lib/dateUtils";
 
 export const dynamic = "force-dynamic";
 
@@ -18,7 +19,7 @@ export async function POST() {
   const employeeId = user.employeeId;
   if (!employeeId) return NextResponse.json({ error: "No employee ID on session" }, { status: 400 });
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getPHDate();
   const existing = await getTodayStatus(employeeId, today);
   if (existing.status === "not_clocked_in") {
     return NextResponse.json({ error: "Not clocked in today" }, { status: 409 });
@@ -27,8 +28,7 @@ export async function POST() {
     return NextResponse.json({ error: "Already clocked out today" }, { status: 409 });
   }
 
-  const now = new Date();
-  const logoutTime = `${String(now.getHours()).padStart(2, "0")}:${String(now.getMinutes()).padStart(2, "0")}`;
+  const logoutTime = getPHTime();
 
   const schedule = await getScheduleForEmployee(employeeId);
   let departureStatus: "on_time" | "early" | "no_schedule" = "no_schedule";

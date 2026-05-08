@@ -1,23 +1,24 @@
 import type { TimeEntry, EmployeeSchedule } from "./googleSheets";
 import type { CutoffPeriod } from "./cutoff";
+import { getAustralianDate, getPHDate } from "./dateUtils";
 
 export type PayslipData = {
   payslipId: string;
   invoiceNo: string;
-  invoiceDate: string;        // YYYY-MM-DD
+  invoiceDate: string;
   serviceProviderCode: string;
-  // Employee
   employeeId: string;
   employeeName: string;
   position: string;
   department: string;
-  hireDate: string;           // YYYY-MM-DD
+  hireDate: string;
   contractValue: number;
-  // Period
   cutoff: CutoffPeriod;
   // Hours
-  hoursRendered: number;
-  hoursAwarded: number;
+  hoursRendered: number;    // actual logged hours this period
+  hoursAwarded: number;     // expected hours up to today
+  actualDaysWorked: number;
+  expectedDaysToDate: number;
   // Earnings
   hourlyRate: number;
   adminTaskPay: number;
@@ -28,6 +29,8 @@ export type PayslipData = {
   leaveDaysTaken: number;
   lateEarlyMinutes: number;
   attendanceDeductions: number;
+  absenceDays: number;
+  absenceDeductions: number;
   otHours: number;
   overtimePay: number;
   totalEarnings: number;
@@ -89,7 +92,6 @@ function computeOvertimeHours(
   for (const e of entries) {
     if (e.date < cutoff.from || e.date > cutoff.to || !e.logoutTime) continue;
     const extraMinutes = Math.max(0, toMinutes(e.logoutTime) - schedEnd);
-    // Only qualifies if worked MORE than 1 full hour past shift end
     if (extraMinutes >= 60) {
       total += Math.floor(extraMinutes / 60);
     }
@@ -153,37 +155,71 @@ export function buildPayslipData(
 ): PayslipData {
   const config: ContractConfigInput = overrides.contractConfig ?? getContractConfig(employeeId);
 
-  // Hours = working weekdays in the full cutoff period × 7.5
-  const workingDays = countWorkingDays(cutoff.from, cutoff.to);
-  const hoursRendered = workingDays * HOURS_PER_DAY;
-  const hoursAwarded = hoursRendered;
+  // ── Actual attendance from TimeTracking ────────────────────────────────────
+  const periodEntries = allEntries.filter(
+    (e) => e.date >= cutoff.from && e.date <= cutoff.to
+  );
+  const completedEntries = periodEntries.filter((e) => !!e.logoutTime);
+  const inProgressEntries = periodEntries.filter((e) => !e.logoutTime);
+  const actualDaysWorked = completedEntries.length;
+  const hoursRendered = actualDaysWorked * HOURS_PER_DAY;
+
+  // Expected working days up to today (capped at cutoff end)
+  const today = getPHDate();
+  const periodCap = today <= cutoff.to ? today : cutoff.to;
+  const expectedDaysToDate = countWorkingDays(cutoff.from, periodCap);
+  const hoursAwarded = expectedDaysToDate * HOURS_PER_DAY;
 
   const leaveDaysTaken = overrides.leaveDaysTaken ?? 0;
-  // recepTaskPay is always fixed at half the monthly contract value
-  const recepTaskPay = config.contractValue / 2;
-  // Rate auto-adjusts: task pay ÷ working hours this cutoff
-  const displayedHourlyRate = hoursAwarded > 0
-    ? Math.round((recepTaskPay / hoursAwarded) * 100) / 100
+
+  // Total working days in the full cutoff period (for rate and proration)
+  const totalWorkingDays = countWorkingDays(cutoff.from, cutoff.to);
+  const totalPeriodHours = totalWorkingDays * HOURS_PER_DAY;
+
+  // recepTaskPay is PRORATED: (contractValue/2) × (daysActuallyWorked / totalDaysInPeriod)
+  // This keeps the invoice in sync with actual attendance — you earn as you go
+  const fullRecepTaskPay = config.contractValue / 2;
+  const recepTaskPay = totalWorkingDays > 0
+    ? Math.round((fullRecepTaskPay * actualDaysWorked / totalWorkingDays) * 100) / 100
+    : 0;
+
+  // Hourly rate = full contract half ÷ full period hours (for display reference)
+  const displayedHourlyRate = totalPeriodHours > 0
+    ? Math.round((fullRecepTaskPay / totalPeriodHours) * 100) / 100
     : config.hourlyRate;
-  // Leave deductions use base rate (contractValue ÷ 150 = standard per-day rate)
+
+  // Base rate for deductions (contractValue ÷ 150 = standard per-hour rate)
   const baseHourlyRate = config.contractValue > 0 ? config.contractValue / 150 : config.hourlyRate;
+
   const leaveDeductions = leaveDaysTaken * baseHourlyRate * HOURS_PER_DAY;
-  // Fees in ContractConfig are monthly — halve for per-cutoff invoice
+
+  // Absence deductions are no longer needed — proration of recepTaskPay handles it.
+  // Keeping fields at 0 for backwards compatibility.
+  const absenceDays = 0;
+  const absenceDeductions = 0;
+
+  // Fees: half-month contractual allowances (fixed regardless of days)
   const internetFee = config.internetFee / 2;
   const medicalFee = config.medicalFee / 2;
-  // Late arrivals + early clock-outs: deduct at minute rate (hourlyRate ÷ 60)
+
+  // Late/early minute deductions from schedule
   const lateEarlyMinutes = overrides.schedule
     ? computeLateEarlyMinutes(allEntries, cutoff, overrides.schedule)
     : 0;
   const minuteRate = displayedHourlyRate / 60;
   const attendanceDeductions = Math.round(lateEarlyMinutes * minuteRate * 100) / 100;
-  // Overtime: only whole hours past shift end that exceed the 1-hour threshold
+
+  // Overtime: whole hours logged past shift end (must exceed 1-hour threshold)
   const otHours = overrides.schedule
     ? computeOvertimeHours(allEntries, cutoff, overrides.schedule)
     : 0;
   const overtimePay = Math.round(otHours * displayedHourlyRate * 100) / 100;
+
   const adminTaskPay = 0;
-  const totalEarnings = recepTaskPay + internetFee + medicalFee - leaveDeductions - attendanceDeductions + overtimePay;
+  const totalEarnings =
+    recepTaskPay + internetFee + medicalFee
+    - leaveDeductions - attendanceDeductions
+    + overtimePay;
 
   // Contract duration from hire to cutoff end
   const hire = new Date(hireDate);
@@ -194,23 +230,21 @@ export function buildPayslipData(
 
   const timeBankPerMonth = 0.83;
   const timeBankTotal = Math.round(contractMonths * timeBankPerMonth * 100) / 100;
-  // Cap hours claimed so time bank balance never goes negative
   const hoursClaimed = Math.min(overrides.hoursClaimed ?? 0, timeBankTotal);
   const timeBankBalance = Math.round((timeBankTotal - hoursClaimed) * 100) / 100;
 
-  // Invoice number: MMPPYYYY — PP=01 for 1st–15th cutoff, PP=02 for 16th–end
+  // Invoice number: MMPPYYYY
   const [y, m] = cutoff.to.split("-");
   const fromDay = parseInt(cutoff.from.split("-")[2], 10);
   const instance = fromDay <= 15 ? "01" : "02";
   const invoiceNo = `${m}${instance}${y}`;
 
-  // Service provider code: first name or employee ID
   const serviceProviderCode = employeeName.split(" ")[0] ?? employeeId;
 
   return {
     payslipId: overrides.payslipId ?? `${employeeId}-${cutoff.from}-${cutoff.to}`,
     invoiceNo,
-    invoiceDate: new Date().toISOString().slice(0, 10),
+    invoiceDate: getAustralianDate(),
     serviceProviderCode,
     employeeId,
     employeeName,
@@ -221,6 +255,8 @@ export function buildPayslipData(
     cutoff,
     hoursRendered,
     hoursAwarded,
+    actualDaysWorked,
+    expectedDaysToDate,
     hourlyRate: displayedHourlyRate,
     adminTaskPay,
     recepTaskPay,
@@ -230,6 +266,8 @@ export function buildPayslipData(
     leaveDaysTaken,
     lateEarlyMinutes,
     attendanceDeductions,
+    absenceDays,
+    absenceDeductions,
     otHours,
     overtimePay,
     totalEarnings,

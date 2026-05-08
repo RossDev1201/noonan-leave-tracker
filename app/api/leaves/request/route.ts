@@ -2,6 +2,7 @@ import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
 import { appendLeaveRequest } from "@/lib/googleSheets";
+import { getPHDate } from "@/lib/dateUtils";
 
 export const dynamic = "force-dynamic";
 
@@ -23,7 +24,7 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "leaveDate and days are required" }, { status: 400 });
   }
 
-  const today = new Date().toISOString().slice(0, 10);
+  const today = getPHDate();
   await appendLeaveRequest({
     employeeId: user.employeeId,
     requestDate: today,

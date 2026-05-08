@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { appendInvoiceEditRequest } from "@/lib/googleSheets";
+import { appendInvoiceEditRequest, getEditRequestForPeriod } from "@/lib/googleSheets";
 import { getCurrentCutoff } from "@/lib/cutoff";
 
 export const dynamic = "force-dynamic";
@@ -19,6 +19,11 @@ export async function POST(req: Request) {
   };
 
   const cutoff = getCurrentCutoff();
+
+  const existing = await getEditRequestForPeriod(user.employeeId, cutoff.from, cutoff.to);
+  if (existing && existing.status === "Pending") {
+    return NextResponse.json({ error: "You already have a pending edit request for this period" }, { status: 409 });
+  }
 
   await appendInvoiceEditRequest({
     employeeId: user.employeeId,
