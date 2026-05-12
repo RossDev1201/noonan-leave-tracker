@@ -352,19 +352,24 @@ export default function DashboardPage() {
     e.preventDefault();
     setEditSubmitting(true);
     setEditMessage(null);
-    const res = await fetch("/api/time/request-edit", {
-      method: "POST",
-      headers: { "Content-Type": "application/json" },
-      body: JSON.stringify(editForm),
-    });
-    const data = await res.json() as { error?: string };
-    setEditSubmitting(false);
-    if (res.ok) {
-      setEditMessage({ type: "success", text: "Request submitted! Awaiting admin review." });
-      setEditingDate(null);
-      void fetchPeriodEntries();
-    } else {
-      setEditMessage({ type: "error", text: data.error ?? "Failed to submit" });
+    try {
+      const res = await fetch("/api/time/request-edit", {
+        method: "POST",
+        headers: { "Content-Type": "application/json" },
+        body: JSON.stringify(editForm),
+      });
+      const data = await res.json() as { error?: string };
+      if (res.ok) {
+        setEditMessage({ type: "success", text: "Request submitted! Awaiting admin review." });
+        setEditingDate(null);
+        void fetchPeriodEntries();
+      } else {
+        setEditMessage({ type: "error", text: data.error ?? "Failed to submit" });
+      }
+    } catch {
+      setEditMessage({ type: "error", text: "Something went wrong. Please try again." });
+    } finally {
+      setEditSubmitting(false);
     }
   }
 

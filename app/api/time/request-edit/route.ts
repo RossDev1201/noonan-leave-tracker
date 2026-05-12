@@ -32,15 +32,20 @@ export async function POST(req: Request) {
     return NextResponse.json({ error: "A pending edit request already exists for this date" }, { status: 409 });
   }
 
-  await appendTimeEditRequest({
-    employeeId: user.employeeId,
-    targetDate: body.targetDate,
-    requestedLoginTime: body.requestedLoginTime,
-    requestedLogoutTime: body.requestedLogoutTime,
-    reason: body.reason ?? "",
-    status: "Pending",
-    requestedAt: new Date().toISOString(),
-  });
+  try {
+    await appendTimeEditRequest({
+      employeeId: user.employeeId,
+      targetDate: body.targetDate,
+      requestedLoginTime: body.requestedLoginTime,
+      requestedLogoutTime: body.requestedLogoutTime,
+      reason: body.reason ?? "",
+      status: "Pending",
+      requestedAt: new Date().toISOString(),
+    });
+  } catch (err) {
+    console.error("appendTimeEditRequest failed:", err);
+    return NextResponse.json({ error: "Failed to save request. Please try again." }, { status: 500 });
+  }
 
   return NextResponse.json({ ok: true });
 }
