@@ -4,7 +4,7 @@ import { useSession, signOut } from "next-auth/react";
 import { useRouter } from "next/navigation";
 import { useEffect, useState } from "react";
 import { ThemeToggle } from "@/app/components/ThemeToggle";
-import type { TimeEditRequest } from "@/lib/googleSheets";
+import type { ManualChangeRequest } from "@/lib/googleSheets";
 
 type EmployeeSchedule = {
   startTime: string;
@@ -42,7 +42,7 @@ type PeriodEntry = {
   date: string;
   loginTime: string;
   logoutTime: string;
-  editRequest: TimeEditRequest | null;
+  editRequest: ManualChangeRequest | null;
 };
 
 type EditForm = {

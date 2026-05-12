@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { getTimeEntriesForEmployee, getTimeEditRequests } from "@/lib/googleSheets";
+import { getTimeEntriesForEmployee, getManualChangeRequests } from "@/lib/googleSheets";
 import { getCurrentCutoff } from "@/lib/cutoff";
 
 export const dynamic = "force-dynamic";
@@ -16,7 +16,7 @@ export async function GET() {
   const cutoff = getCurrentCutoff();
   const [allEntries, editRequests] = await Promise.all([
     getTimeEntriesForEmployee(user.employeeId),
-    getTimeEditRequests(user.employeeId),
+    getManualChangeRequests(user.employeeId),
   ]);
 
   const periodEntries = allEntries
@@ -26,7 +26,7 @@ export async function GET() {
   // Attach latest edit request status per date
   const entriesWithStatus = periodEntries.map((e) => {
     const req = editRequests
-      .filter((r) => r.targetDate === e.date)
+      .filter((r) => r.date === e.date)
       .sort((a, b) => b.requestedAt.localeCompare(a.requestedAt))[0];
     return { ...e, editRequest: req ?? null };
   });

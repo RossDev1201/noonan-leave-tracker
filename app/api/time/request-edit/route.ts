@@ -1,7 +1,7 @@
 import { NextResponse } from "next/server";
 import { getServerSession } from "next-auth";
 import { authOptions } from "@/lib/auth";
-import { appendTimeEditRequest, getTimeEditRequests } from "@/lib/googleSheets";
+import { appendManualChangeRequest, getManualChangeRequests } from "@/lib/googleSheets";
 
 export const dynamic = "force-dynamic";
 
@@ -24,18 +24,18 @@ export async function POST(req: Request) {
   }
 
   // Block if there's already a pending request for this date
-  const existing = await getTimeEditRequests(user.employeeId);
+  const existing = await getManualChangeRequests(user.employeeId);
   const hasPending = existing.some(
-    (r) => r.targetDate === body.targetDate && r.status === "Pending"
+    (r) => r.date === body.targetDate && r.status === "Pending"
   );
   if (hasPending) {
     return NextResponse.json({ error: "A pending edit request already exists for this date" }, { status: 409 });
   }
 
   try {
-    await appendTimeEditRequest({
+    await appendManualChangeRequest({
       employeeId: user.employeeId,
-      targetDate: body.targetDate,
+      date: body.targetDate,
       requestedLoginTime: body.requestedLoginTime,
       requestedLogoutTime: body.requestedLogoutTime,
       reason: body.reason ?? "",
@@ -44,7 +44,7 @@ export async function POST(req: Request) {
     });
   } catch (err) {
     const msg = err instanceof Error ? err.message : String(err);
-    console.error("appendTimeEditRequest failed:", msg);
+    console.error("appendManualChangeRequest failed:", msg);
     return NextResponse.json({ error: `Save failed: ${msg}` }, { status: 500 });
   }
 
