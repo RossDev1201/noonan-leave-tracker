@@ -43,8 +43,9 @@ export async function POST(req: Request) {
       requestedAt: new Date().toISOString(),
     });
   } catch (err) {
-    console.error("appendTimeEditRequest failed:", err);
-    return NextResponse.json({ error: "Failed to save request. Please try again." }, { status: 500 });
+    const msg = err instanceof Error ? err.message : String(err);
+    console.error("appendTimeEditRequest failed:", msg);
+    return NextResponse.json({ error: `Save failed: ${msg}` }, { status: 500 });
   }
 
   return NextResponse.json({ ok: true });
